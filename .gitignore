@@ -1,0 +1,15 @@
+# Credentials — never commit
+.env
+
+# Local data (generated songs, covers, DJ clips, voice references, library)
+data/
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# Gradio / OS cruft
+.gradio/
+.DS_Store
