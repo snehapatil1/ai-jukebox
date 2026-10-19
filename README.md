@@ -4,6 +4,14 @@ Generate original songs with matching cover art, and let an AI DJ add spoken
 commentary between tracks. A Gradio app powered entirely by the class AI
 services (no paid services, no port 9000).
 
+## Status
+
+All four features are implemented and were verified against the live class
+services: song generation, cover art (with placeholder + retry), AI DJ
+(prefetched, cached, skippable), and the queue player (auto-advancing
+song → DJ clip → song, skip, persistence across restarts). See `PROGRESS.md`
+for the full step log and test evidence.
+
 ## Features
 
 1. **Custom song generation** — pick a style, mood, duration (10–60 s slider,
