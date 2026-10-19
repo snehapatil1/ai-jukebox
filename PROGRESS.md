@@ -66,13 +66,41 @@ the repeatable checks):
   4. cover prompt → FLUX PNG — passed, ~2.6 s
   5. DJ commentary (names both songs) + Chatterbox clip — passed
   6. voice validation (accepts MP3, rejects non-audio) — passed
+- **Live player/queue test (real browser + the app's own API)** — full queue
+  state machine verified with two 10 s test songs (removed afterwards):
+  - Auto-advance: song 1 → DJ clip → song 2 → "Queue finished" with NO clicks
+    after the initial Play all (timeline: 10 s song, ~5 s DJ clip, 10 s song).
+  - **Autoplay findings** (what was tried): Gradio 6.30 sets the audio value and
+    expects the browser to play it. Synthetic `element.click()` calls from
+    automation are NOT user gestures, so Chrome's autoplay policy blocked
+    playback (audio stayed paused at 0:00). With a genuine user-activation
+    click (CDP `Runtime.evaluate userGesture`), everything played — including
+    the mid-queue DJ clip and the second song, with zero further input.
+    **No workaround was needed**: after the first real Play click the queue
+    advances automatically, exactly as the spec asks. (Docs note: in a
+    headless/automated browser without real gestures, playback is blocked by
+    the browser, not by the app.)
+  - Skip: during a song → jumps to the DJ clip; during DJ speech → jumps to
+    the next song; during the last song → "Queue finished".
+  - DJ commentary verified in the live transcript (names both songs, style,
+    mood, content is on-topic).
+  - Add to queue (queue grew to 3 rows with ▶ now-playing highlight in the UI).
+  - Custom voice: real MP3 accepted + "voice cloning enabled", removal resets
+    to default, a .txt file rejected with a clear message; ≤15 MB guard in code.
+  - Retry cover: regenerates the PNG without touching the audio.
+  - Persistence: server restart → both songs reloaded from `data/library.json`.
+- **Bug found & fixed during testing**: the Library tab did not reflect songs
+  persisted from a previous run until a new song was generated — gallery and
+  song dropdown are now seeded from the library at startup.
 - UI smoke run (local `python app.py`, real browser): generated two test songs
   end to end through the Gradio UI (vocal "Moonlight Beat Drop" and
   instrumental "Lunar Beat Drop", ~11 s each incl. FLUX cover: BPM/metadata
   shown, lyrics displayed, both songs in the library with covers rendering).
   Test songs were removed afterwards to leave the library clean.
 
-## Step 5 — Remaining (as of this log)
-- Player-queue live playlist verification (song → DJ → song → …) with the
-  app: pending the system ffmpeg install; the app code paths are all in place.
-- Push `sneha`, open PR `sneha → master`.
+## Step 5 — Status
+- All four core features verified against the live services (see Step 4).
+- Remaining: push `sneha` and open/maintain the PR `sneha → master` **on the
+  user's go-ahead** (the branch is already pushed; PR #1 was auto-created
+  before the user asked to hold off).
+- Test songs were removed after every verification run; the library is clean.

@@ -384,9 +384,10 @@ def build_app() -> gr.Blocks:
                     gen_result = gr.Markdown("")
 
                 with gr.Tab("📚 Library"):
-                    library_gallery = gr.Gallery(label="Your songs", columns=4,
-                                                 height=300, object_fit="cover")
-                    song_pick = gr.Dropdown([], label="Song")
+                    _items, _choices = _library_views()
+                    library_gallery = gr.Gallery(value=_items, label="Your songs",
+                                                 columns=4, height=300, object_fit="cover")
+                    song_pick = gr.Dropdown(_choices, label="Song")
                     with gr.Row():
                         add_queue_btn = gr.Button("➕ Add to queue")
                         retry_cover_btn = gr.Button("🖼️ Retry cover")
