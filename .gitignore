@@ -13,3 +13,7 @@ venv/
 # Gradio / OS cruft
 .gradio/
 .DS_Store
+
+# Virtual environment
+.venv/
+.env
