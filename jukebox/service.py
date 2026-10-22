@@ -6,6 +6,7 @@ calls out to any paid or third-party service.
 from __future__ import annotations
 
 import logging
+import re
 import threading
 from pathlib import Path
 
@@ -85,18 +86,58 @@ def compose_music(
 # ---------------------------------------------------------------------------
 # 3. Cover art (FLUX, port 9006) — prompt by Qwen
 # ---------------------------------------------------------------------------
-def cover_prompt_for(song: Song) -> str:
-    """Qwen writes a FLUX-safe prompt for this song's cover."""
-    first_lyric_line = ""
+
+# Keywords that mark structurally important lyric lines (verses/chorus/refrain).
+_IMPORTANT_LINE_RE = re.compile(r"^(?:verse|chorus|refrain|bridge|harp|guitar|\[intro\]|\[outro\]|\[instrumental\]).*:", re.IGNORECASE)
+
+
+def _select_key_lines(lyrics: str, count: int = 6) -> list[str]:
+    """Pick up to *count* lyric lines that carry the song's imagery/mood."""
+    lines = [l.strip() for l in lyrics.splitlines() if l.strip()]
+    scored: list[tuple[float, str]] = []
+    section_idx = 0
+    for line in lines:
+        score = 0.0
+        # Lines right after section headers get priority
+        if _IMPORTANT_LINE_RE.match(line):
+            score = 10.0 + section_idx * 0.5
+            section_idx += 1
+        # Short, vivid lines are good lyrical content
+        elif 5 <= len(line) <= 120 and not any(
+            tag in line.lower() for tag in ("[intro]", "[outro]", "[end]")
+        ):
+            score = 1.0
+        scored.append((score, line))
+    scored.sort(key=lambda t: t[0], reverse=True)
+    return [line for _, line in scored[:count]]
+
+
+def cover_prompt_for(song: Song, *, custom_prompt: str | None = None) -> str:
+    """Qwen writes a FLUX-safe prompt for this song's cover.
+
+    If *custom_prompt* is given, the user has already written/edited the
+    description and we skip Qwen entirely, returning it verbatim.
+    """
+    if custom_prompt and custom_prompt.strip():
+        return custom_prompt.strip()
+
+    # Build the user-side prompt with selected lyric excerpts.
+    theme_or_none = (song.theme or "none").strip()
+    lyrics_section = prompts.LYRICS_SECTION_EMPTY
     if song.lyrics:
-        for line in song.lyrics.splitlines():
-            stripped = line.strip().lstrip("*#[]-")
-            if stripped:
-                first_lyric_line = stripped[:90]
-                break
-    user = prompts.COVER_USER.format(
-        title=song.title, style=song.style, mood=song.mood,
-        theme=song.theme or "none", lyric_line=first_lyric_line,
+        key_lines = _select_key_lines(song.lyrics, count=6)
+        if key_lines:
+            lyrics_text = "\n".join(key_lines)
+            lyrics_section = prompts.LYRICS_SECTION_FULL.format(
+                lyrics_important_lines=lyrics_text
+            )
+
+    user = prompts.COVER_USER_TEMPLATE.format(
+        title=song.title,
+        style=song.style,
+        mood=song.mood,
+        theme_or_none=theme_or_none,
+        lyrics_section=lyrics_section,
     )
     text = clients.qwen_chat_with_fallback(prompts.COVER_SYSTEM, user, max_tokens=1024)
     if not text:
@@ -107,12 +148,13 @@ def cover_prompt_for(song: Song) -> str:
     return text.strip()
 
 
-def generate_cover(song: Song) -> Path:
-    """Generate cover PNG for the song, store it, return the absolute path."""
-    png = clients.generate_image(cover_prompt_for(song))
+def generate_cover(song: Song, *, custom_prompt: str | None = None) -> tuple[Path, str]:
+    """Generate cover PNG for the song. Returns (absolute_path, prompt_used)."""
+    prompt = cover_prompt_for(song, custom_prompt=custom_prompt)
+    png = clients.generate_image(prompt)
     out = config.COVER_DIR / clients.new_filename(".png")
     out.write_bytes(png)
-    return out
+    return out, prompt
 
 
 def placeholder_cover() -> Path:

@@ -98,15 +98,18 @@ def _queue_html(state: dict) -> str:
             else "background:#1d1e26;border:1px solid #333;"
         )
         title = html.escape(song.title)
+        credit = ""
+        if song.created_by.strip():
+            credit = f"<br><span style='color:#7aadd;font-size:12px'>by {html.escape(song.created_by)}</span>"
         meta = f"{html.escape(song.style)} · {html.escape(song.mood)} · "
         meta += "instrumental" if song.instrumental else "vocal"
         rows.append(
-            f"<div style='{style} border-radius:8px;padding:6px 10px;margin:4px 0;"
+            f"<div style='{style} border-radius:8px;padding:6px 10px;margin:4px 0;'"
             f"display:flex;align-items:center;gap:10px;'>"
             f"<img src='{_serve_url(service.cover_display_path(song))}' "
             f"style='width:36px;height:36px;border-radius:6px;object-fit:cover;'>"
             f"<span>{icon}</span><div><b>{marker}{title}</b><br>"
-            f"<span style='color:#999;font-size:12px'>{meta}</span></div></div>"
+            f"<span style='color:#999;font-size:12px'>{meta}</span>{credit}</div></div>"
         )
     return "<div>" + "".join(rows) + "</div>"
 
@@ -235,7 +238,7 @@ def add_to_queue(song_id: str, player_state: dict) -> tuple:
 # ---------------------------------------------------------------------------
 # generation pipeline
 # ---------------------------------------------------------------------------
-def generate_song(style: str, mood: str, duration: float, instrumental: bool, theme: str):
+def generate_song(created_by: str, style: str, mood: str, duration: float, instrumental: bool, theme: str):
     started = time.monotonic()
     status = lambda msg: f"{msg} · elapsed {_elapsed(started)}"
     noop_gallery, noop_pick = gr.update(), gr.update()
@@ -254,13 +257,14 @@ def generate_song(style: str, mood: str, duration: float, instrumental: bool, th
                status("🎨 Painting cover art (FLUX)…"), "", noop_gallery, noop_pick)
 
         cover_rel = None
+        cover_prmpt = ""
         try:
             tmp = Song(
                 id="", title=draft["title"], style=style, mood=mood,
                 duration_sec=duration, instrumental=instrumental,
                 theme=(theme or "").strip(), lyrics=draft["lyrics"],
             )
-            cover_abs = service.generate_cover(tmp)
+            cover_abs, cover_prmpt = service.generate_cover(tmp)
             cover_rel = str(cover_abs.relative_to(config.ROOT))
         except Exception as exc:  # noqa: BLE001 - cover failure is non-fatal
             log.warning("Cover generation failed: %s", exc)
@@ -269,9 +273,10 @@ def generate_song(style: str, mood: str, duration: float, instrumental: bool, th
         song = LIBRARY.add(
             title=draft["title"], style=style, mood=mood, duration_sec=duration,
             instrumental=instrumental, theme=(theme or "").strip(),
-            lyrics=draft["lyrics"],
+            lyrics=draft["lyrics"], created_by=created_by.strip(),
             audio_path=str(audio_path.relative_to(config.ROOT)),
             cover_path=cover_rel,
+            cover_prompt=cover_prmpt if cover_rel else "",
         )
         if cover_rel is None:
             note = "⚠️ Cover could not be generated — use **Retry cover**."
@@ -279,8 +284,9 @@ def generate_song(style: str, mood: str, duration: float, instrumental: bool, th
             note = f"BPM {meta.get('bpm', '?')} · {meta.get('timesignature', '?')}/4"
         else:
             note = ""
+        creator_tag = f"\n_Created by {html.escape(created_by)}_" if created_by.strip() else ""
         result = (
-            f"### ✅ “{html.escape(song.title)}” saved to the library\n"
+            f"### ✅ \u201c{html.escape(song.title)}\u201d saved to the library{creator_tag}\n"
             f"*{html.escape(song.style)} · {html.escape(song.mood)} · "
             f"{'instrumental' if song.instrumental else 'vocal'} · "
             f"{int(duration)}s* · {note}\n\n"
@@ -300,18 +306,33 @@ def generate_song(style: str, mood: str, duration: float, instrumental: bool, th
                status(f"❌ Generation failed: {exc}"), "", noop_gallery, noop_pick)
 
 
-def retry_cover(song_id: str, player_state: dict):
+def retry_cover(
+    song_id: str, player_state: dict, cover_description: str | None = None,
+):
+    """Regenerate cover; honour *cover_description* if the user edited it."""
     if not song_id:
-        return gr.update(), "Use the Library tab to select a song first.", gr.update(), gr.update()
+        return (gr.update(),
+                "Use the Library tab to select a song first.", gr.update(), gr.update())
     song = LIBRARY.get(song_id)
     if song is None:
         return gr.update(), "That song no longer exists.", gr.update(), gr.update()
+
+    # Decide whether the caller wants to regenerate or edit the prompt only.
+    regen = cover_description and cover_description.strip()
+    if not regen:
+        return gr.update(), "", gr.update(), gr.update()
+
     try:
-        cover_abs = service.generate_cover(song)
+        cover_abs, used_prompt = service.generate_cover(song, custom_prompt=regen)
     except Exception as exc:  # noqa: BLE001
         log.warning("Cover retry failed: %s", exc)
-        return gr.update(), f"❌ Cover regeneration failed: {exc}", gr.update(), gr.update()
-    LIBRARY.update(song_id, cover_path=str(cover_abs.relative_to(config.ROOT)))
+        return (gr.update(),
+                f"❌ Cover regeneration failed: {exc}", gr.update(), gr.update())
+    LIBRARY.update(
+        song_id,
+        cover_path=str(cover_abs.relative_to(config.ROOT)),
+        cover_prompt=used_prompt,
+    )
     items, _ = _library_views()
     state = dict(player_state)
     now_cover = gr.update()
@@ -319,7 +340,9 @@ def retry_cover(song_id: str, player_state: dict):
         cur = state["queue"][state["pos"]]
         if cur == song_id:
             now_cover = gr.update(value=str(service.cover_display_path(song)))
-    return gr.update(value=items), f"✅ New cover saved for “{song.title}”.", _queue_html(state), now_cover
+    return (gr.update(value=items),
+            f'✅ New cover saved for "{html.escape(song.title)}".',
+            _queue_html(state), now_cover)
 
 
 # ---------------------------------------------------------------------------
@@ -371,6 +394,7 @@ def build_app() -> gr.Blocks:
             # ---------------- left column: create + library ----------------
             with gr.Column(scale=2):
                 with gr.Tab("✨ Generate a song"):
+                    created_by = gr.Textbox("", label="Your name", placeholder="Enter your name for credit")
                     style = gr.Dropdown(GENRES, value="Pop", allow_custom_value=True,
                                         label="Style / genre")
                     mood = gr.Dropdown(MOODS, value="Happy", label="Mood")
@@ -388,6 +412,11 @@ def build_app() -> gr.Blocks:
                     library_gallery = gr.Gallery(value=_items, label="Your songs",
                                                  columns=4, height=300, object_fit="cover")
                     song_pick = gr.Dropdown(_choices, label="Song")
+                    cover_desc = gr.Textbox(
+                        "", lines=4, max_lines=8,
+                        label="Cover art description (edit then click Retry cover)",
+                        info="Change this text to guide the cover-art prompt, then press 'Retry cover'.",
+                    )
                     with gr.Row():
                         add_queue_btn = gr.Button("➕ Add to queue")
                         retry_cover_btn = gr.Button("🖼️ Retry cover")
@@ -415,7 +444,7 @@ def build_app() -> gr.Blocks:
         # ---------------- events ----------------
         gen_btn.click(
             generate_song,
-            inputs=[style, mood, duration, instrumental, theme],
+            inputs=[created_by, style, mood, duration, instrumental, theme],
             outputs=[gen_btn, gen_status, gen_result, library_gallery, song_pick],
         )
         add_queue_btn.click(
@@ -447,9 +476,22 @@ def build_app() -> gr.Blocks:
             inputs=[player_state, voice_state],
             outputs=[queue_html, now_status, now_cover, now_audio, skip_btn, player_state],
         )
+        # When a library song is selected, load its saved cover prompt into the editor.
+        def on_song_select(song_id: str):
+            if not song_id:
+                return ""
+            song = LIBRARY.get(song_id)
+            if song is None:
+                return ""
+            return song.cover_prompt or ""
+        song_pick.change(
+            on_song_select,
+            inputs=[song_pick],
+            outputs=[cover_desc],
+        )
         retry_cover_btn.click(
             retry_cover,
-            inputs=[song_pick, player_state],
+            inputs=[song_pick, player_state, cover_desc],
             outputs=[library_gallery, lib_status, queue_html, now_cover],
         )
         voice_upload.change(
