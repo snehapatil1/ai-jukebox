@@ -206,7 +206,7 @@ def select_for_player(song_id: str | None, player_state: dict) -> tuple:
     """Load a selection without autoplay; keep the player's queue in sync."""
     song = LIBRARY.get(song_id) if song_id else None
     if song is None:
-        return (gr.update(),) * 6
+        return (gr.update(),) * 7
     state = dict(player_state or INITIAL_PLAYER)
     state["queue"] = [sid for sid in state["queue"] if LIBRARY.get(sid) is not None]
     if song_id not in state["queue"]:
@@ -217,7 +217,7 @@ def select_for_player(song_id: str | None, player_state: dict) -> tuple:
     if not song.abs_audio.is_file():
         return (_queue_html(state), f'Audio file is missing for "{html.escape(song.title)}".',
                 gr.update(value=str(service.cover_display_path(song))),
-                gr.update(value=None), gr.update(interactive=False), '', state)
+                gr.update(value=None), gr.update(interactive=False), '', '', state)
     lyrics_text = (song.lyrics or '').strip()
     lyrics_section = ''
     if lyrics_text:
