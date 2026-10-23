@@ -12,12 +12,11 @@
   --aj-coral: #ea580c; --aj-blue: #0891b2; --aj-pink: #db2777;
 }
 
-/* Page sizing — COMPACT, zero scroll, everything visible in one viewport */
-html, body { margin: 0 !important; padding: 0 !important; height: 100vh !important; overflow: hidden !important; background: var(--aj-page) !important; }
-.gradio-container { max-width: 1100px !important; margin-inline: auto !important; height: 100vh !important; display: flex !important; flex-direction: column !important; }
-.gradio-container > .main { padding: 0 16px !important; flex: 1 1 auto !important; overflow: hidden !important; min-height: 0 !important; max-height: none !important; }
-.gradio-container main { padding: 0 !important; min-height: 0 !important; max-height: none !important; overflow: hidden !important; scrollbar-width: none !important; }
-.gradio-container main::-webkit-scrollbar { display: none; }
+/* Page sizing — compact, scrollable when content overflows */
+html, body { margin: 0 !important; padding: 0 !important; min-height: 100vh !important; background: var(--aj-page) !important; }
+.gradio-container { max-width: 1100px !important; margin-inline: auto !important; display: flex !important; flex-direction: column !important; }
+.gradio-container > .main { padding: 0 16px !important; flex: 1 1 auto !important; }
+.gradio-container main { padding: 0 !important; }
 
 /* Header — compact */
 .gradio-container .aj-header { padding: 10px 4px 8px !important; margin: 0 !important; border: 0 !important; }
