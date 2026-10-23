@@ -16,6 +16,7 @@ import html
 import logging
 import shutil
 import time
+import base64
 from pathlib import Path
 from urllib.parse import quote
 
@@ -53,7 +54,24 @@ def _elapsed(started: float) -> str:
 
 
 def _serve_url(p: Path) -> str:
-    """Same-origin URL for a repo file (works inside gr.HTML)."""
+    """Return a data URI for cover art images, or Gradio's /file= URL for audio."""
+    covers_base = config.ROOT / "data" / "covers"
+    try:
+        rel = p.relative_to(covers_base)
+        ext = p.suffix.lower()
+        if ext in (".png", ".jpg", ".jpeg", ".webp"):
+            # Embed image as base64 data URI — bypasses Gradio file serve allowlist entirely.
+            full_path = covers_base / rel.name
+            if full_path.is_file():
+                with open(full_path, "rb") as f:
+                    data = f.read()
+                mime_map = {".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".webp": "image/webp"}
+                mime = mime_map[ext]
+                b64 = base64.b64encode(data).decode("ascii")
+                return f"data:{mime};base64,{b64}"
+    except ValueError:
+        pass
+    # Fallback: let Gradio serve it
     return f"/gradio_api/file={quote(str(p))}"
 
 
@@ -72,10 +90,9 @@ def _voice_ref(voice_state: dict) -> Path | None:
 def _library_views() -> tuple[list, list]:
     songs = LIBRARY.all()
     items = [
-        (str(service.cover_display_path(s)), f"{s.title} · {s.style} · {s.mood}")
+        (_serve_url(service.cover_display_path(s)), f"{s.title} · {s.style} · {s.mood}")
         for s in songs
     ]
-    # Gradio 6 requires (label, value) tuples; dicts are interpreted key-only.
     choices = [(s.display_label(), s.id) for s in songs]
     return items, choices
 
