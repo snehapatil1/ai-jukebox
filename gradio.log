@@ -1,0 +1,28 @@
+2026-10-22 14:38:09,187 INFO httpx2: HTTP Request: HEAD https://huggingface.co/api/telemetry/https%3A/api.gradio.app/gradio-initiated-analytics "HTTP/1.1 200 OK"
+2026-10-22 14:38:09,190 INFO httpx: HTTP Request: GET https://api.gradio.app/pkg-version "HTTP/1.1 200 OK"
+Traceback (most recent call last):
+  File "C:\Users\mlwhi\OneDrive\MBAX 6418\Assignment 3\ai-jukebox\app.py", line 514, in <module>
+    app.launch(
+    ~~~~~~~~~~^
+        server_name="127.0.0.1",
+        ^^^^^^^^^^^^^^^^^^^^^^^^
+    ...<3 lines>...
+        css="footer {display: none !important;}",
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "C:\Users\mlwhi\OneDrive\MBAX 6418\Assignment 3\ai-jukebox\.venv\Lib\site-packages\gradio\blocks.py", line 3422, in launch
+    ) = http_server.start_server(
+        ~~~~~~~~~~~~~~~~~~~~~~~~^
+        app=self.app,
+        ^^^^^^^^^^^^^
+    ...<4 lines>...
+        ssl_keyfile_password=ssl_keyfile_password,
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "C:\Users\mlwhi\OneDrive\MBAX 6418\Assignment 3\ai-jukebox\.venv\Lib\site-packages\gradio\http_server.py", line 182, in start_server
+    raise OSError(
+        f"Cannot find empty port in range: {min(server_ports)}-{max(server_ports)}. You can specify a different port by setting the GRADIO_SERVER_PORT environment variable or passing the `server_port` parameter to `launch()`."
+    )
+OSError: Cannot find empty port in range: 7860-7860. You can specify a different port by setting the GRADIO_SERVER_PORT environment variable or passing the `server_port` parameter to `launch()`.

@@ -6,6 +6,8 @@ has no dependency on absolute machine paths and survives server restarts.
 """
 from __future__ import annotations
 
+import hashlib
+import html
 import json
 import threading
 import uuid
@@ -30,6 +32,8 @@ class Song:
     lyrics: str = ""
     audio_path: str = ""            # repo-relative, e.g. "data/audio/x.mp3"
     cover_path: str | None = None   # repo-relative or None
+    cover_prompt: str = ""          # human-editable cover description stored for regeneration
+    created_by: str = ""            # name of the person who generated this song
     created_at: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
 
     @property
@@ -42,7 +46,10 @@ class Song:
 
     def display_label(self) -> str:
         kind = "instrumental" if self.instrumental else "vocal"
-        return f"{self.title} ({self.style}, {self.mood} - {kind})"
+        label = f"{self.title} ({self.style}, {self.mood} - {kind})"
+        if self.created_by.strip():
+            label += f"\u2014 by {html.escape(self.created_by)}"
+        return label
 
 
 class SongLibrary:
@@ -100,6 +107,28 @@ class SongLibrary:
                 setattr(song, k, v)
             self._save()
             return song
+
+    def delete(self, song_id: str) -> bool:
+        with _LOCK:
+            song = self._songs.pop(song_id, None)
+            if song is None:
+                return False
+            # Remove associated audio file
+            if song.audio_path:
+                audio_file = config.ROOT / song.audio_path
+                try:
+                    audio_file.unlink(missing_ok=True)
+                except OSError:
+                    pass
+            # Remove cover art if present
+            if song.cover_path:
+                cover_file = config.ROOT / song.cover_path
+                try:
+                    cover_file.unlink(missing_ok=True)
+                except OSError:
+                    pass
+            self._save()
+            return True
 
     @staticmethod
     def rel(path: Path) -> str:
