@@ -464,56 +464,51 @@ def build_app() -> gr.Blocks:
         player_state = gr.State(INITIAL_PLAYER)
         voice_state = gr.State({})
 
-        with gr.Row(elem_id="musicWorkspace"):
-            with gr.Column(scale=7, elem_id="studioPanel"):
-                with gr.Tabs(selected="library", elem_id="studioTabs"):
-                    with gr.Tab("Library", id="library"):
-                        gr.HTML('<div class="collection-heading"><span class="aj-eyebrow">YOUR MUSIC</span><h2>Your collection</h2><p>Original tracks. Artwork that tells the story.</p></div>')
-                        _items, _choices = _library_views()
-                        library_gallery = gr.Gallery(value=_items, label="", columns=3, height=260, object_fit="cover", preview=False, elem_id="libraryGallery")
-                        song_pick = gr.Dropdown(_choices, label="Select a song")
-                        with gr.Row(elem_id="libraryActions"):
-                            add_queue_btn = gr.Button("Add to queue", size="sm")
-                            play_all_btn = gr.Button("Play all", size="sm", variant="primary")
-                            delete_song_btn = gr.Button("Delete track", size="sm", variant="stop", elem_id="deleteTrack")
-                        with gr.Accordion("Edit artwork", open=False):
-                            cover_desc = gr.Textbox("", lines=3, max_lines=8, label="Artwork description")
-                            retry_cover_btn = gr.Button("Regenerate artwork", size="sm")
-                        lib_status = gr.Markdown("", elem_id="libraryStatus")
+        with gr.Row():
+            # ---------------- left column: generate + library ----------------
+            with gr.Column(scale=2):
+                with gr.Tab("✨ Generate"):
+                    with gr.Group():
+                        created_by = gr.Textbox("", label="Your name", placeholder="Enter your name for credit")
+                        style = gr.Dropdown(GENRES, value="Pop", allow_custom_value=True, label="Genre")
+                        mood = gr.Dropdown(MOODS, value="Happy", label="Mood")
+                        duration = gr.Slider(config.DURATION_MIN, 60, value=config.DURATION_DEFAULT, step=5, label="Duration (seconds)")
+                        instrumental = gr.Checkbox(False, label="Instrumental (no lyrics)")
+                        theme = gr.Textbox("", label="Theme (optional)", placeholder="e.g. a robot band playing on the moon")
+                        gen_btn = gr.Button("🎵 Generate song", variant="primary")
+                    gen_status = gr.Markdown("")
+                    gen_result = gr.Markdown("")
 
-                    with gr.Tab("Create", id="create"):
-                        gr.HTML('<div class="collection-heading"><span class="aj-eyebrow">THE STUDIO</span><h2>Create a track</h2><p>Choose a sound. Give it a story.</p></div>')
-                        with gr.Group():
-                            created_by = gr.Textbox("", label="Your name", placeholder="Name shown on your track")
-                            with gr.Row():
-                                style = gr.Dropdown(GENRES, value="Pop", allow_custom_value=True, label="Genre")
-                                mood = gr.Dropdown(MOODS, value="Happy", label="Mood")
-                            duration = gr.Slider(config.DURATION_MIN, 60, value=config.DURATION_DEFAULT, step=5, label="Duration (seconds)")
-                            instrumental = gr.Checkbox(False, label="Instrumental (no lyrics)")
-                            theme = gr.Textbox("", lines=2, label="Creative direction", placeholder="Describe a story, scene, or feeling for your track")
-                            gen_btn = gr.Button("Generate track", variant="primary")
-                        gen_status = gr.Markdown("")
-                        gen_result = gr.Markdown("")
+                with gr.Tab("📚 Library"):
+                    _items, _choices = _library_views()
+                    library_gallery = gr.Gallery(value=_items, label="", columns=4, height=320, object_fit="cover")
+                    song_pick = gr.Dropdown(_choices, label="Select a song")
+                    cover_desc = gr.Textbox("", lines=4, max_lines=8, label="Cover description (edit then Retry)")
+                    with gr.Row(variant="compact"):
+                        add_queue_btn = gr.Button("➕ Add to queue", size="sm")
+                        retry_cover_btn = gr.Button("🖼️ Retry cover", size="sm")
+                        delete_song_btn = gr.Button("🗑 Delete", size="sm", variant="stop")
+                        play_all_btn = gr.Button("▶️ Play all", size="sm")
+                    lib_status = gr.Markdown("")
 
-            with gr.Column(scale=3, elem_id="playerPanel"):
-                gr.HTML('<div class="aj-eyebrow now-heading">ON THE PLAYER</div>')
-                now_cover = gr.Image(label="Artwork", show_label=False, height=230, interactive=False, elem_id="nowArtwork")
-                now_status = gr.Markdown("Choose a track to see its artwork and start listening.", elem_id="trackDetails")
-                lyrics_section = gr.HTML('', elem_id="lyricsDisplay")
-                gr.Markdown("### Up next")
-                queue_html = gr.HTML(_queue_html(INITIAL_PLAYER), elem_id="queueList")
-                with gr.Accordion("DJ voice settings", open=False):
-                    voice_upload = gr.Audio(type="filepath", label="Custom DJ voice (MP3/WAV)", sources=["upload"])
-                    voice_status = gr.Markdown("Using the default bundled DJ voice.")
-                    remove_voice_btn = gr.Button("Remove custom voice", interactive=False)
-
-        with gr.Row(elem_id="playbackDock"):
-            with gr.Column(scale=0, min_width=145, elem_id="transportControls"):
+            # ---------------- right column: player + queue ----------------
+            with gr.Column(scale=3):
+                gr.Markdown("### 🎧 Now Playing")
+                now_cover = gr.Image(label="", height=280, interactive=False)
+                now_status = gr.Markdown("Nothing playing — generate a song or press **Play all**.")
+                lyrics_section = gr.HTML('')
+                now_audio = gr.Audio(label="", type="filepath", interactive=False, autoplay=False)
                 with gr.Row():
-                    play_btn = gr.Button("Play", variant="primary", size="lg")
-                    skip_btn = gr.Button("Skip", interactive=False, size="lg")
-            with gr.Column(scale=1, elem_id="audioColumn"):
-                now_audio = gr.Audio(label="Player", show_label=False, type="filepath", interactive=False, autoplay=True, elem_id="mainAudio")
+                    play_btn = gr.Button("▶️ Play", variant="primary", size="lg")
+                    skip_btn = gr.Button("⏭️ Skip", interactive=False, size="lg")
+
+                gr.Markdown("### 📋 Queue")
+                queue_html = gr.HTML(_queue_html(INITIAL_PLAYER))
+
+                gr.Markdown("### 🎙️ DJ Voice")
+                voice_upload = gr.Audio(type="filepath", label="Custom DJ voice (optional MP3/WAV)", sources=["upload"])
+                voice_status = gr.Markdown("Using the default bundled DJ voice.")
+                remove_voice_btn = gr.Button("Remove custom voice", interactive=False)
 
         # Refresh from the current library on every page load, not the startup snapshot.
         def refresh_library():
