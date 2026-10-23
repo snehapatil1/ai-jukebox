@@ -1,0 +1,110 @@
+/* Music-library composition: rail, covers, listening pane, bottom transport. */
+:root, [data-theme="dark"] {
+  --aj-page: #0f1123; --aj-panel: rgba(30, 34, 62, 0.85); --aj-input: #2a2d4a;
+  --aj-hover: #3b3f6e; --aj-line: rgba(139, 92, 246, 0.3); --aj-accent: #8b5cf6;
+  --aj-coral: #f97316; --aj-blue: #06b6d4; --aj-pink: #ec4899;
+}
+[data-theme="light"] {
+  --aj-page: #faf8ff; --aj-panel: rgba(255, 255, 255, 0.92); --aj-input: #ede9fe;
+  --aj-hover: #ddd6fe; --aj-line: rgba(139, 92, 246, 0.25); --aj-accent: #7c3aed;
+  --aj-coral: #ea580c; --aj-blue: #0891b2; --aj-pink: #db2777;
+}
+html body .gradio-container { max-width: 1680px !important; }
+.gradio-container > .main { padding: 0 20px !important; }
+.gradio-container main { padding: 0 !important; min-height: 0 !important; }
+.gradio-container .aj-header { padding: 18px 4px 16px; margin: 0; border: 0; }
+.aj-header .aj-eyebrow { color: var(--aj-coral) !important; font-size: 10px; margin-bottom: 4px; }
+#mainTitle { font-size: 26px; font-weight: 700; margin: 0; }
+#mainDesc { font-size: 12px; margin: 4px 0 0; }
+#themeToggle { border-radius: 20px !important; font-size: 12px; min-height: 36px; }
+#musicWorkspace { gap: 18px !important; align-items: stretch; }
+#studioPanel { padding: 0 !important; border: 0; background: transparent !important; }
+#studioTabs { display: grid !important; grid-template-columns: 112px minmax(0, 1fr); gap: 16px; min-width: 0; height: 100%; }
+#studioTabs > .tab-nav {
+  grid-column: 1; grid-row: 1; flex-direction: column !important; align-self: stretch;
+  justify-content: flex-start; gap: 8px; border: 0 !important; padding: 18px 8px !important;
+  background: var(--aj-panel); border-radius: 14px; backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
+}
+#studioTabs > .tab-nav button {
+  width: 100%; text-align: left; padding: 12px 14px !important;
+  border: 0 !important; border-radius: 9px !important; font-size: 13px;
+}
+#studioTabs > .tab-nav button.selected {
+  background: linear-gradient(135deg, rgba(139, 92, 246, 0.3), rgba(6, 182, 212, 0.2)) !important;
+  color: var(--aj-accent-bright) !important; border: 1px solid rgba(139, 92, 246, 0.4) !important;
+  box-shadow: 0 0 12px rgba(139, 92, 246, 0.2) !important;
+}
+#studioTabs > .tabitem {
+  grid-column: 2; grid-row: 1; min-width: 0; padding: 20px !important;
+  border-radius: 14px !important; box-sizing: border-box;
+}
+.collection-heading { padding: 0 0 4px; }
+.collection-heading .aj-eyebrow { color: var(--aj-coral) !important; font-size: 10px; }
+.collection-heading h2 { color: var(--aj-text); font-size: 24px; font-weight: 650; letter-spacing: -.035em; margin: 4px 0; }
+.collection-heading p { color: var(--aj-muted); font-size: 12px; margin: 0 0 8px; }
+#libraryGallery { height: clamp(180px, 30vh, 300px) !important; }
+#libraryGallery .thumbnail-item { border-radius: 10px !important; overflow: hidden; }
+#libraryGallery img { object-fit: cover; }
+#libraryGallery .caption { font-size: 12px; padding: 7px !important; }
+#libraryActions { gap: 8px; }
+#libraryActions button { min-width: 70px !important; font-size: 12px; }
+#deleteTrack {
+  background: rgba(249, 115, 22, 0.15) !important; color: var(--aj-coral) !important;
+  border: 1px solid rgba(249, 115, 22, 0.4) !important; border-radius: var(--radius-sm) !important;
+  font-weight: 600 !important; transition: all 0.2s ease !important;
+}
+#deleteTrack:hover {
+  background: rgba(249, 115, 22, 0.25) !important; border-color: var(--aj-coral) !important;
+  box-shadow: 0 0 12px rgba(249, 115, 22, 0.3) !important; transform: translateY(-1px);
+}
+#playerPanel { padding: 18px !important; border: 0; border-radius: 14px !important; gap: 12px; }
+.now-heading { color: var(--aj-accent) !important; letter-spacing: .12em; font-size: 10px; }
+#nowArtwork { height: clamp(170px, 29vh, 290px) !important; min-height: 0 !important; border: 0; border-radius: 12px !important; }
+#nowArtwork img { object-fit: contain !important; }
+#trackDetails { min-height: 52px; font-size: 13px; }
+#trackDetails strong { color: var(--aj-text); }
+#queueList { min-height: 46px; max-height: 130px; overflow-y: auto; }
+.aj-queue-item { padding: 9px 0 !important; font-size: 12px; }
+.aj-queue-empty { font-size: 12px; text-align: left !important; padding: 8px 0 !important; }
+#playbackDock {
+  box-sizing: border-box; flex-wrap: nowrap; align-items: center; gap: 20px !important;
+  background: var(--aj-panel); border: 1px solid var(--aj-line); border-radius: 14px;
+  padding: 10px 18px !important; margin: 0; min-height: 108px; width: 100%;
+  backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
+  box-shadow: 0 -2px 20px rgba(0,0,0,0.2), 0 0 30px rgba(139, 92, 246, 0.1);
+}
+#transportControls { flex: 0 0 145px !important; min-width: 145px !important; }
+#transportControls .row { flex-wrap: nowrap; gap: 8px; }
+#transportControls button {
+  min-width: 0 !important; border-radius: 999px !important; min-height: 42px; font-size: 13px;
+  background: linear-gradient(135deg, #7c3aed, #6d28d9) !important;
+  color: #ffffff !important; border: 1px solid #8b5cf6 !important;
+  box-shadow: 0 2px 8px rgba(124, 58, 237, 0.3) !important; transition: all 0.2s ease !important;
+}
+#transportControls button:hover:not(:disabled) {
+  background: linear-gradient(135deg, #8b5cf6, #7c3aed) !important;
+  box-shadow: 0 4px 16px rgba(124, 58, 237, 0.4) !important; transform: translateY(-1px);
+}
+#transportControls button[disabled], #transportControls button:disabled {
+  opacity: 0.4 !important; filter: grayscale(0.5); cursor: not-allowed;
+}
+#audioColumn { min-width: 0 !important; }
+#mainAudio { min-height: 80px; border: 0 !important; }
+#mainAudio .waveform-container { min-width: 0; }
+.gradio-container button.primary { background: #8160b8 !important; border-color: #a18ac8 !important; }
+.gradio-container button.primary:hover { background: #7050a3 !important; }
+@media(min-width: 1000px) {
+  #musicWorkspace { height: calc(100dvh - 350px); min-height: 320px; flex-wrap: nowrap; }
+  #studioPanel, #playerPanel { height: 100%; min-height: 0 !important; }
+  #studioTabs > .tabitem, #playerPanel { overflow-y: auto; overflow-x: hidden; scrollbar-width: thin; }
+  #playbackDock { position: sticky; bottom: 12px; z-index: 10; }
+}
+@media(max-width: 999px) {
+  #studioPanel, #playerPanel { flex-basis: 100% !important; }
+  #studioTabs { grid-template-columns: 88px minmax(0, 1fr); gap: 10px; }
+  #studioTabs > .tabitem { padding: 14px !important; }
+  #studioTabs > .tab-nav { padding: 10px 4px !important; }
+  #studioTabs > .tab-nav button { padding: 10px !important; }
+  #playbackDock { gap: 10px !important; padding: 10px !important; }
+  #transportControls { flex-basis: 110px !important; min-width: 110px !important; }
+}
