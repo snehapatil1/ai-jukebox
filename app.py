@@ -83,35 +83,32 @@ def _library_views() -> tuple[list, list]:
 def _queue_html(state: dict) -> str:
     queue, pos, mode = state["queue"], state["pos"], state["mode"]
     if not queue:
-        return "<p style='color:#888'><i>Queue is empty — generate a song or press \"Play all\".</i></p>"
+        return "<p style='color:#64748b; text-align:center; padding:20px;'><i>🎵 Queue is empty — generate a song or press Play all.</i></p>"
     rows = []
     for i, sid in enumerate(queue):
         song = LIBRARY.get(sid)
         if song is None:
             continue
         is_current = i == pos and mode in ("song", "dj")
-        icon = "🎵" if is_current and mode == "song" else ("🎙️" if is_current else "·")
-        marker = "▶ " if is_current else ""
-        style = (
-            "background:#2c2f3a;border:1px solid #6c8cff;"
-            if is_current
-            else "background:#1d1e26;border:1px solid #333;"
-        )
+        icon = "▶️" if is_current and mode == "song" else ("🎙️" if is_current else "·")
+        marker = "" if is_current else ""
+        bg = "linear-gradient(135deg, rgba(139,92,246,0.12), rgba(96,165,250,0.1))" if is_current else "rgba(255,255,255,0.02)"
+        border_color = "rgba(139,92,246,0.3)" if is_current else "rgba(255,255,255,0.06)"
         title = html.escape(song.title)
         credit = ""
         if song.created_by.strip():
-            credit = f"<br><span style='color:#7aadd;font-size:12px'>by {html.escape(song.created_by)}</span>"
-        meta = f"{html.escape(song.style)} · {html.escape(song.mood)} · "
-        meta += "instrumental" if song.instrumental else "vocal"
+            credit = f'<span style="color:#7aadd;font-size:11px;display:block;margin-top:2px">by {html.escape(song.created_by)}</span>'
+        meta = f'{html.escape(song.style)} · {html.escape(song.mood)} · {"instrumental" if song.instrumental else "vocal"}'
+        cover_url = _serve_url(service.cover_display_path(song))
         rows.append(
-            f"<div style='{style} border-radius:8px;padding:6px 10px;margin:4px 0;'"
-            f"display:flex;align-items:center;gap:10px;'>"
-            f"<img src='{_serve_url(service.cover_display_path(song))}' "
-            f"style='width:36px;height:36px;border-radius:6px;object-fit:cover;'>"
-            f"<span>{icon}</span><div><b>{marker}{title}</b><br>"
-            f"<span style='color:#999;font-size:12px'>{meta}</span>{credit}</div></div>"
+            f"<div style='background:{bg};border:1px solid {border_color};"
+            f"border-radius:10px;padding:8px 12px;margin:6px 0;flex-shrink:0;'>"
+            f"<div style='display:flex;align-items:center;gap:12px;'> "
+            f"<img src='{cover_url}' style='width:44px;height:44px;border-radius:8px;object-fit:cover;'/>"
+            f"<div><b style='color:#e2e8f0'>{icon} {marker}{title}</b>{credit}"
+            f"<span style='color:#64748b;font-size:11px'>{meta}</span></div></div></div>"
         )
-    return "<div>" + "".join(rows) + "</div>"
+    return "<div style='display:flex;flex-direction:column;gap:4px;'>\n" + "\n".join(rows) + "\n</div>"
 
 
 def _now_status(song: Song, mode: str) -> str:
@@ -346,6 +343,37 @@ def retry_cover(
 
 
 # ---------------------------------------------------------------------------
+# Delete songs from library
+# ---------------------------------------------------------------------------
+def delete_song(song_id: str, player_state: dict):
+    if not song_id or player_state is None:
+        return "", gr.update(), gr.update(value=[]), _queue_html(player_state) if player_state else ""
+    song = LIBRARY.get(song_id)
+    if song is None:
+        return "❌ Song not found.", gr.update(), gr.update(value=[]), ""
+    ok = LIBRARY.delete(song_id)
+    if not ok:
+        return f"❌ Could not delete \"{html.escape(song.title)}\".", gr.update(), gr.update(value=[]), ""
+    
+    # Remove from queue if present
+    if player_state and song_id in player_state.get("queue", []):
+        queue = player_state["queue"]
+        pos = player_state["pos"]
+        if pos >= len(queue):
+            pos = max(0, len(queue) - 1)
+        player_state["queue"] = [s for s in queue if s != song_id]
+        player_state["pos"] = min(pos, len(player_state["queue"]) - 1)
+        if not player_state["queue"]:
+            player_state["pos"] = -1
+    
+    items, choices = _library_views()
+    return (f'🗑 Deleted "{html.escape(song.title)}".',
+            gr.update(choices=choices, value=None),
+            gr.update(value=items),          # refresh gallery tiles
+            _queue_html(player_state))
+
+
+# ---------------------------------------------------------------------------
 # custom DJ voice
 # ---------------------------------------------------------------------------
 def on_voice_upload(filepath: str | None, voice_state: dict):
@@ -379,67 +407,479 @@ def on_voice_remove(voice_state: dict):
 # ---------------------------------------------------------------------------
 # UI
 # ---------------------------------------------------------------------------
+CUSTOM_CSS = """
+/* ===================== THEME VARIABLES ===================== */
+:root { --transition-speed: 0.3s; }
+
+/* ================= DARK MODE ================= */
+main {
+    background: linear-gradient(160deg, #0f0f1a 0%, #141428 40%, #0e1a2e 100%);
+    min-height: 100vh !important;
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    transition: background var(--transition-speed);
+}
+body, .wrap { background: transparent !important; }
+
+.prose h1, .prose > h1 {
+    font-size: 2.2rem !important;
+    font-weight: 800 !important;
+    background: linear-gradient(135deg, #a78bfa, #60a5fa, #34d399);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    margin-bottom: 0.2em !important;
+}
+.prose p, .prose > p { color: #94a3b8 !important; font-size: 0.95rem !important; }
+
+.tabitem {
+    background: rgba(255,255,255,0.03) !important;
+    border-radius: 12px !important;
+    border: 1px solid rgba(255,255,255,0.06) !important;
+    transition: background var(--transition-speed), border var(--transition-speed);
+}
+.tab-nav {
+    background: rgba(255,255,255,0.04) !important;
+    border-radius: 10px !important;
+    padding: 4px !important;
+}
+.tab-nav button.selected {
+    background: linear-gradient(135deg, rgba(139,92,246,0.25), rgba(96,165,250,0.25)) !important;
+    color: #e0e7ff !important;
+    border-radius: 8px !important;
+    font-weight: 600 !important;
+    box-shadow: 0 2px 12px rgba(139,92,246,0.15) !important;
+}
+.tab-nav button:not(.selected) {
+    color: #64748b !important;
+    border-radius: 8px !important;
+    transition: all 0.2s ease;
+}
+.tab-nav button:hover:not(.selected) {
+    color: #94a3b8 !important;
+    background: rgba(255,255,255,0.05) !important;
+}
+
+.prose h2, .prose > h2 {
+    font-size: 1.15rem !important;
+    font-weight: 700 !important;
+    color: #cbd5e1 !important;
+    margin-top: 0.5em !important;
+    margin-bottom: 0.6em !important;
+}
+
+label {
+    color: #94a3b8 !important;
+    font-size: 0.82rem !important;
+    font-weight: 600 !important;
+    letter-spacing: 0.03em !important;
+    text-transform: uppercase !important;
+    transition: color var(--transition-speed);
+}
+
+select, .dropdown-wrap {
+    background: rgba(255,255,255,0.05) !important;
+    border: 1px solid rgba(255,255,255,0.1) !important;
+    border-radius: 8px !important;
+    color: #e2e8f0 !important;
+    transition: all var(--transition-speed);
+}
+select:focus, select:hover {
+    border-color: rgba(139,92,246,0.5) !important;
+    box-shadow: 0 0 0 3px rgba(139,92,246,0.1) !important;
+}
+
+input[type="text"], textarea, .textbox-wrap {
+    background: rgba(255,255,255,0.05) !important;
+    border: 1px solid rgba(255,255,255,0.1) !important;
+    border-radius: 8px !important;
+    color: #e2e8f0 !important;
+    transition: all var(--transition-speed);
+}
+input[type="text"]:focus, textarea:focus {
+    border-color: rgba(139,92,246,0.5) !important;
+    box-shadow: 0 0 0 3px rgba(139,92,246,0.1) !important;
+}
+
+button.primary, .primary .wrap {
+    background: linear-gradient(135deg, #7c3aed, #6366f1) !important;
+    border: none !important;
+    border-radius: 10px !important;
+    font-weight: 600 !important;
+    letter-spacing: 0.02em !important;
+    box-shadow: 0 4px 15px rgba(124,58,237,0.3) !important;
+    transition: transform 0.15s ease, box-shadow 0.15s ease !important;
+}
+button.primary:hover:not(.disabled), .primary .wrap:hover:not(.disabled) {
+    transform: translateY(-1px) !important;
+    box-shadow: 0 6px 20px rgba(124,58,237,0.45) !important;
+}
+
+button.secondary {
+    background: rgba(255,255,255,0.06) !important;
+    border: 1px solid rgba(255,255,255,0.1) !important;
+    border-radius: 10px !important;
+    color: #cbd5e1 !important;
+    font-weight: 500 !important;
+    transition: all 0.2s ease !important;
+}
+button.secondary:hover {
+    background: rgba(255,255,255,0.1) !important;
+    border-color: rgba(139,92,246,0.4) !important;
+}
+
+.delete-btn {
+    background: rgba(239,68,68,0.12) !important;
+    border: 1px solid rgba(239,68,68,0.25) !important;
+    color: #fca5a5 !important;
+    border-radius: 10px !important;
+    font-weight: 500 !important;
+    transition: all 0.2s ease !important;
+}
+.delete-btn:hover {
+    background: rgba(239,68,68,0.22) !important;
+    border-color: rgba(239,68,68,0.5) !important;
+    color: #fecaca !important;
+}
+
+.checkbox-row {
+    background: rgba(255,255,255,0.04) !important;
+    border-radius: 8px !important;
+    padding: 8px 12px !important;
+    border: 1px solid rgba(255,255,255,0.06) !important;
+}
+checkbox label {
+    color: #cbd5e1 !important;
+    text-transform: none !important;
+    letter-spacing: normal !important;
+    font-size: 0.9rem !important;
+}
+
+.gallery {
+    background: rgba(255,255,255,0.02) !important;
+    border-radius: 12px !important;
+    border: 1px solid rgba(255,255,255,0.06) !important;
+    padding: 8px !important;
+    transition: all var(--transition-speed);
+}
+
+.slider-container {
+    background: rgba(255,255,255,0.04) !important;
+    border-radius: 8px !important;
+}
+.slider-container input {
+    background: rgba(139,92,246,0.3) !important;
+}
+
+.markdown-status-success {
+    background: rgba(34,197,94,0.08) !important;
+    border: 1px solid rgba(34,197,94,0.2) !important;
+    border-radius: 10px !important;
+    color: #86efac !important;
+    padding: 10px 14px !important;
+}
+.markdown-status-error {
+    background: rgba(239,68,68,0.08) !important;
+    border: 1px solid rgba(239,68,68,0.2) !important;
+    border-radius: 10px !important;
+    color: #fca5a5 !important;
+    padding: 10px 14px !important;
+}
+
+.audio-player {
+    border-radius: 12px !important;
+    overflow: hidden !important;
+}
+
+[data-testid="image"] {
+    border-radius: 12px !important;
+    border: 1px solid rgba(255,255,255,0.08) !important;
+    box-shadow: 0 4px 20px rgba(0,0,0,0.4) !important;
+    transition: border var(--transition-speed), box-shadow var(--transition-speed);
+}
+
+.gradio-column { gap: 20px !important; }
+
+::-webkit-scrollbar { width: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.1); border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.2); }
+
+.queue-item-current {
+    background: linear-gradient(135deg, rgba(139,92,246,0.15), rgba(96,165,250,0.12)) !important;
+    border: 1px solid rgba(139,92,246,0.3) !important;
+    border-radius: 10px !important;
+    box-shadow: 0 2px 10px rgba(139,92,246,0.1) !important;
+}
+
+.component-info {
+    color: #64748b !important;
+    font-size: 0.78rem !important;
+    font-style: italic !important;
+}
+
+/* ================= LIGHT MODE ================= */
+[data-theme="light"] main {
+    background: linear-gradient(160deg, #f8fafc 0%, #f1f5f9 40%, #e0e7ff 100%) !important;
+}
+
+[data-theme="light"] .tabitem {
+    background: rgba(255,255,255,0.85) !important;
+    border: 1px solid rgba(0,0,0,0.08) !important;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.06) !important;
+}
+[data-theme="light"] .tab-nav {
+    background: rgba(0,0,0,0.04) !important;
+}
+[data-theme="light"] .tab-nav button.selected {
+    background: rgba(139,92,246,0.15) !important;
+    color: #1e293b !important;
+    box-shadow: 0 2px 8px rgba(139,92,246,0.1) !important;
+}
+[data-theme="light"] .tab-nav button:not(.selected) {
+    color: #64748b !important;
+}
+[data-theme="light"] .tab-nav button:hover:not(.selected) {
+    color: #1e293b !important;
+    background: rgba(139,92,246,0.06) !important;
+}
+
+[data-theme="light"] .prose h1, [data-theme="light"] .prose > h1 {
+    background: linear-gradient(135deg, #7c3aed, #6366f1, #0ea5e9) !important;
+    -webkit-background-clip: text !important;
+    -webkit-text-fill-color: transparent !important;
+}
+[data-theme="light"] .prose p, [data-theme="light"] .prose > p {
+    color: #475569 !important;
+}
+[data-theme="light"] .prose h2, [data-theme="light"] .prose > h2 {
+    color: #1e293b !important;
+}
+
+[data-theme="light"] label {
+    color: #475569 !important;
+}
+
+[data-theme="light"] select, [data-theme="light"] .dropdown-wrap {
+    background: #ffffff !important;
+    border: 1px solid rgba(0,0,0,0.15) !important;
+    color: #1e293b !important;
+}
+[data-theme="light"] select option {
+    background: #ffffff !important;
+    color: #1e293b !important;
+}
+
+[data-theme="light"] input[type="text"],
+[data-theme="light"] textarea,
+[data-theme="light"] .textbox-wrap {
+    background: #ffffff !important;
+    border: 1px solid rgba(0,0,0,0.15) !important;
+    color: #1e293b !important;
+}
+
+[data-theme="light"] checkbox label {
+    color: #1e293b !important;
+}
+
+[data-theme="light"] .gallery {
+    background: rgba(255,255,255,0.7) !important;
+    border: 1px solid rgba(0,0,0,0.06) !important;
+}
+
+[data-theme="light"] .slider-container {
+    background: rgba(255,255,255,0.8) !important;
+}
+[data-theme="light"] .slider-container input {
+    background: rgba(139,92,246,0.25) !important;
+}
+
+[data-theme="light"] button.secondary {
+    background: rgba(0,0,0,0.05) !important;
+    border: 1px solid rgba(0,0,0,0.1) !important;
+    color: #334155 !important;
+}
+[data-theme="light"] button.secondary:hover {
+    background: rgba(0,0,0,0.1) !important;
+    border-color: rgba(139,92,246,0.4) !important;
+}
+
+[data-theme="light"] .delete-btn {
+    background: rgba(239,68,68,0.1) !important;
+    border: 1px solid rgba(239,68,68,0.25) !important;
+    color: #dc2626 !important;
+}
+[data-theme="light"] .delete-btn:hover {
+    background: rgba(239,68,68,0.2) !important;
+    border-color: rgba(239,68,68,0.5) !important;
+    color: #b91c1c !important;
+}
+
+[data-theme="light"] .markdown-status-success {
+    background: rgba(34,197,94,0.08) !important;
+    border: 1px solid rgba(34,197,94,0.2) !important;
+    color: #15803d !important;
+}
+[data-theme="light"] .markdown-status-error {
+    background: rgba(239,68,68,0.08) !important;
+    border: 1px solid rgba(239,68,68,0.2) !important;
+    color: #dc2626 !important;
+}
+
+[data-theme="light"] [data-testid="image"] {
+    border: 1px solid rgba(0,0,0,0.1) !important;
+    box-shadow: 0 4px 20px rgba(0,0,0,0.1) !important;
+}
+
+[data-theme="light"] ::-webkit-scrollbar-thumb {
+    background: rgba(0,0,0,0.15); border-radius: 3px;
+}
+[data-theme="light"] ::-webkit-scrollbar-thumb:hover {
+    background: rgba(0,0,0,0.25);
+}
+
+[data-theme="light"] .queue-item-current {
+    background: linear-gradient(135deg, rgba(139,92,246,0.08), rgba(96,165,250,0.06)) !important;
+    border: 1px solid rgba(139,92,246,0.25) !important;
+    box-shadow: 0 2px 10px rgba(139,92,246,0.08) !important;
+}
+
+[data-theme="light"] .component-info {
+    color: #94a3b8 !important;
+}
+
+/* ================= THEME TOGGLE ================= */
+.theme-toggle-btn {
+    display: inline-flex !important;
+    align-items: center; justify-content: center;
+    background: transparent !important;
+    border: 1px solid rgba(255,255,255,0.12) !important;
+    border-radius: 10px !important;
+    padding: 6px 12px !important;
+    font-size: 1.3rem !important;
+    cursor: pointer !important;
+    transition: all 0.2s ease !important;
+    min-width: 44px; height: 44px;
+    line-height: 1 !important;
+}
+.theme-toggle-btn:hover {
+    background: rgba(255,255,255,0.08) !important;
+    border-color: rgba(139,92,246,0.4) !important;
+    transform: scale(1.08);
+}
+[data-theme="light"] .theme-toggle-btn {
+    border-color: rgba(0,0,0,0.12) !important;
+    background: rgba(0,0,0,0.04) !important;
+}
+[data-theme="light"] .theme-toggle-btn:hover {
+    background: rgba(0,0,0,0.08) !important;
+    border-color: rgba(139,92,246,0.4) !important;
+}
+"""
+
+# ---- Theme JavaScript (loaded via Gradio's js= parameter) ----
+THEME_JS = r"""
+(function() {
+    window.__toggleTheme = function() {
+        var current = document.documentElement.getAttribute('data-theme') || 'dark';
+        var next = current === 'dark' ? 'light' : 'dark';
+        document.documentElement.setAttribute('data-theme', next);
+        try { localStorage.setItem('aj-theme', next); } catch(e) {}
+        __applyThemeIcon();
+    };
+    function __applyThemeIcon() {
+        var current = document.documentElement.getAttribute('data-theme') || 'dark';
+        var btn = document.getElementById('themeToggle');
+        if (!btn) return;
+        btn.textContent = current === 'dark' ? '\u2600\ufe0f' : '\ud83c\udf19';
+        btn.title = current === 'dark' ? 'Switch to light mode' : 'Switch to dark mode';
+    }
+    // Restore saved theme on load
+    try {
+        var saved = localStorage.getItem('aj-theme');
+        if (saved === 'light') {
+            document.documentElement.setAttribute('data-theme', 'light');
+        } else {
+            document.documentElement.setAttribute('data-theme', 'dark');
+        }
+    } catch(e) {}
+    __applyThemeIcon();
+    // Attach click handlers to all theme toggle buttons (handles Gradio re-renders)
+    function attachToggles() {
+        document.querySelectorAll('.theme-toggle').forEach(function(btn) {
+            btn.addEventListener('click', window.__toggleTheme);
+        });
+    }
+    attachToggles();
+    // Re-observe DOM changes for Gradio dynamic renders
+    if (typeof MutationObserver !== 'undefined') {
+        var observer = new MutationObserver(function(mutations) {
+            mutations.forEach(function(m) {
+                if (m.addedNodes.length) attachToggles();
+            });
+        });
+        observer.observe(document.body, { childList: true, subtree: true });
+    }
+})();
+"""
+
 def build_app() -> gr.Blocks:
     with gr.Blocks(title="AI Jukebox") as demo:
-        gr.Markdown(
-            "# 🎵 AI Jukebox\n"
-            "Generate original songs with matching cover art, and let an AI DJ "
-            "spin commentary between tracks. Powered by the class AI services "
-            "on ports 9001 (text), 9006 (cover art), 9007 (music), and 9008 (DJ voice)."
-        )
+        # Header with accent border & theme toggle
+        gr.HTML('''
+            <div style="display:flex; justify-content:space-between; align-items:center; padding-bottom:20px; border-bottom:1px solid rgba(255,255,255,0.08); margin-bottom:16px;">
+                <div>
+                    <h1 id="mainTitle" style="margin:0;font-size:2rem;">🎵 AI Jukebox</h1>
+                    <p id="mainDesc" style="margin:4px 0 0;color:#94a3b8;font-size:0.95rem;">Generate original songs with matching cover art, and let an AI DJ spin commentary between tracks.</p>
+                </div>
+                <button class="theme-toggle" id="themeToggle" title="Toggle light / dark mode">☀️</button>
+            </div>
+        ''')
         player_state = gr.State(INITIAL_PLAYER)
         voice_state = gr.State({})
 
         with gr.Row():
             # ---------------- left column: create + library ----------------
             with gr.Column(scale=2):
-                with gr.Tab("✨ Generate a song"):
-                    created_by = gr.Textbox("", label="Your name", placeholder="Enter your name for credit")
-                    style = gr.Dropdown(GENRES, value="Pop", allow_custom_value=True,
-                                        label="Style / genre")
-                    mood = gr.Dropdown(MOODS, value="Happy", label="Mood")
-                    duration = gr.Slider(config.DURATION_MIN, 60, value=config.DURATION_DEFAULT,
-                                         step=5, label="Duration (seconds)")
-                    instrumental = gr.Checkbox(False, label="Instrumental (no lyrics)")
-                    theme = gr.Textbox("", label="Theme (optional)",
-                                       placeholder="e.g. a robot band playing on the moon")
-                    gen_btn = gr.Button("🎵 Generate song", variant="primary")
+                with gr.Tab("✨ Generate"):
+                    with gr.Group():
+                        created_by = gr.Textbox("", label="Your name", placeholder="Enter your name for credit")
+                        style = gr.Dropdown(GENRES, value="Pop", allow_custom_value=True, label="Genre")
+                        mood = gr.Dropdown(MOODS, value="Happy", label="Mood")
+                        duration = gr.Slider(config.DURATION_MIN, 60, value=config.DURATION_DEFAULT, step=5, label="Duration (seconds)")
+                        instrumental = gr.Checkbox(False, label="Instrumental (no lyrics)")
+                        theme = gr.Textbox("", label="Theme (optional)", placeholder="e.g. a robot band playing on the moon")
+                        gen_btn = gr.Button("🎵 Generate song", variant="primary")
                     gen_status = gr.Markdown("")
                     gen_result = gr.Markdown("")
 
                 with gr.Tab("📚 Library"):
                     _items, _choices = _library_views()
-                    library_gallery = gr.Gallery(value=_items, label="Your songs",
-                                                 columns=4, height=300, object_fit="cover")
-                    song_pick = gr.Dropdown(_choices, label="Song")
-                    cover_desc = gr.Textbox(
-                        "", lines=4, max_lines=8,
-                        label="Cover art description (edit then click Retry cover)",
-                        info="Change this text to guide the cover-art prompt, then press 'Retry cover'.",
-                    )
-                    with gr.Row():
-                        add_queue_btn = gr.Button("➕ Add to queue")
-                        retry_cover_btn = gr.Button("🖼️ Retry cover")
-                        play_all_btn = gr.Button("▶️ Play all")
+                    library_gallery = gr.Gallery(value=_items, label="", columns=4, height=320, object_fit="cover")
+                    song_pick = gr.Dropdown(_choices, label="Select a song")
+                    cover_desc = gr.Textbox("", lines=4, max_lines=8, label="Cover description (edit then Retry)")
+                    with gr.Row(variant="compact"):
+                        add_queue_btn = gr.Button("➕ Add to queue", size="sm")
+                        retry_cover_btn = gr.Button("🖼️ Retry cover", size="sm")
+                        delete_song_btn = gr.Button("🗑 Delete", size="sm", variant="stop")
+                        play_all_btn = gr.Button("▶️ Play all", size="sm")
                     lib_status = gr.Markdown("")
 
             # ---------------- right column: player + DJ voice ----------------
             with gr.Column(scale=3):
-                gr.Markdown("### 🎧 Player")
-                now_cover = gr.Image(label="Cover", height=240, interactive=False)
-                now_status = gr.Markdown("Nothing playing yet — generate a song or press **Play all**.")
-                now_audio = gr.Audio(label="Player", type="filepath", interactive=False,
-                                     autoplay=True)
+                gr.Markdown("### 🎧 Now Playing")
+                now_cover = gr.Image(label="", height=280, interactive=False)
+                now_status = gr.Markdown("Nothing playing — generate a song or press **Play all**.")
+                now_audio = gr.Audio(label="", type="filepath", interactive=False, autoplay=True)
                 with gr.Row():
-                    play_btn = gr.Button("▶️ Play")
-                    skip_btn = gr.Button("⏭️ Skip", interactive=False)
+                    play_btn = gr.Button("▶️ Play", variant="primary", size="lg")
+                    skip_btn = gr.Button("⏭️ Skip", interactive=False, size="lg")
+                
+                gr.Markdown("### 📋 Queue")
                 queue_html = gr.HTML(_queue_html(INITIAL_PLAYER))
 
-                gr.Markdown("### 🎙️ DJ voice")
-                voice_upload = gr.Audio(type="filepath", label="Custom DJ voice (optional MP3/WAV)",
-                                        sources=["upload"])
+                gr.Markdown("### 🎙️ DJ Voice")
+                voice_upload = gr.Audio(type="filepath", label="Custom DJ voice (optional MP3/WAV)", sources=["upload"])
                 voice_status = gr.Markdown("Using the default bundled DJ voice.")
-                remove_voice_btn = gr.Button("🗑️ Remove custom voice", interactive=False)
+                remove_voice_btn = gr.Button("Remove custom voice", interactive=False)
 
         # ---------------- events ----------------
         gen_btn.click(
@@ -494,6 +934,11 @@ def build_app() -> gr.Blocks:
             inputs=[song_pick, player_state, cover_desc],
             outputs=[library_gallery, lib_status, queue_html, now_cover],
         )
+        delete_song_btn.click(
+            delete_song,
+            inputs=[song_pick, player_state],
+            outputs=[lib_status, song_pick, library_gallery, queue_html],
+        )
         voice_upload.change(
             on_voice_upload,
             inputs=[voice_upload, voice_state],
@@ -515,6 +960,12 @@ if __name__ == "__main__":
         server_name="127.0.0.1",
         server_port=7860,
         show_error=True,
-        theme=gr.themes.Soft(),
-        css="footer {display: none !important;}",
+        theme=gr.themes.Soft(
+            primary_hue="violet",
+            secondary_hue="indigo",
+            neutral_hue="slate",
+            font=gr.themes.GoogleFont("Inter"),
+        ),
+        css=CUSTOM_CSS + "footer {display: none !important;} ",
+        js=THEME_JS,
     )

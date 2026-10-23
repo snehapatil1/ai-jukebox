@@ -72,9 +72,38 @@ def compose_music(
 ) -> tuple[Path, dict]:
     """Generate the audio file. Returns (absolute path, service metadata)."""
     theme = (theme or "").strip()
-    prompt = f"{style}, {mood} mood"
+    # Build a detailed prompt for ACE-Step with instrumentation and production cues.
+    style_desc = {
+        "rock": "electric guitars, driving drums, bass line",
+        "pop": "clean production, catchy melody, polished synths",
+        "hip hop": "808 bass, crisp snares, rhythmic beats",
+        "jazz": "saxophone or piano, upright bass, brushed drums",
+        "ambient": "atmospheric pads, reverb-drenched textures, slow evolving harmonies",
+        "metal": "distorted guitars, double-kick drums, aggressive tone",
+        "electronic": "synthesizers, drum machines, electronic textures",
+        "folk": "acoustic guitar, fiddle, warm organic feel",
+        "classical": "string quartet or orchestra, dynamic swells",
+        "r&b": "smooth bass groove, soulful keys, tight rhythm section",
+        "country": "twangy guitars, pedal steel, storytelling feel",
+    }.get(style.lower(), f"{style} instrumentation")
+    
+    mood_desc = {
+        "happy": "uplifting major key, bright energy",
+        "sad": "minor key, emotional depth, melancholic tones",
+        "dark": "dminishing harmonies, tense atmosphere, brooding mood",
+        "energetic": "fast tempo, driving rhythm, intense dynamics",
+        "calm": "slow tempo, gentle dynamics, peaceful mood",
+        "dreamy": "ethereal textures, floating harmonies, reverberant space",
+        "aggressive": "hard-hitting rhythms, sharp attacks, intense delivery",
+        "romantic": "warm harmonies, intimate feel, lyrical melodies",
+        "nostalgic": "vintage warmth, bittersweet tonality, retro character",
+        "epic": "grand crescendos, wide dynamic range, cinematic sweep",
+    }.get(mood.lower(), f"{mood} atmosphere")
+    
+    parts = [f"{style_desc}, {mood_desc}"]
     if theme:
-        prompt += f", theme: {theme}"
+        parts.append(f"theme: {theme}")
+    prompt = ", ".join(parts)
     audio_bytes, meta = clients.generate_music(
         prompt=prompt, lyrics=lyrics, duration_sec=duration_sec
     )

@@ -108,6 +108,28 @@ class SongLibrary:
             self._save()
             return song
 
+    def delete(self, song_id: str) -> bool:
+        with _LOCK:
+            song = self._songs.pop(song_id, None)
+            if song is None:
+                return False
+            # Remove associated audio file
+            if song.audio_path:
+                audio_file = config.ROOT / song.audio_path
+                try:
+                    audio_file.unlink(missing_ok=True)
+                except OSError:
+                    pass
+            # Remove cover art if present
+            if song.cover_path:
+                cover_file = config.ROOT / song.cover_path
+                try:
+                    cover_file.unlink(missing_ok=True)
+                except OSError:
+                    pass
+            self._save()
+            return True
+
     @staticmethod
     def rel(path: Path) -> str:
         """Repo-relative string for persistence (portable across machines)."""

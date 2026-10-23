@@ -17,3 +17,6 @@ venv/
 # Virtual environment
 .venv/
 .env
+
+# Gradio logs
+gradio.log
