@@ -413,7 +413,7 @@ CUSTOM_CSS = """
 
 /* ================= DARK MODE ================= */
 main {
-    background: linear-gradient(160deg, #0f0f1a 0%, #141428 40%, #0e1a2e 100%);
+    background: linear-gradient(160deg, #181a2b 0%, #1c2040 40%, #162038 100%);
     min-height: 100vh !important;
     font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
     transition: background var(--transition-speed);
@@ -428,12 +428,12 @@ body, .wrap { background: transparent !important; }
     -webkit-text-fill-color: transparent;
     margin-bottom: 0.2em !important;
 }
-.prose p, .prose > p { color: #94a3b8 !important; font-size: 0.95rem !important; }
+.prose p, .prose > p { color: #8b95c0 !important; font-size: 0.95rem !important; }
 
 .tabitem {
-    background: rgba(255,255,255,0.03) !important;
+    background: rgba(255,255,255,0.04) !important;
     border-radius: 12px !important;
-    border: 1px solid rgba(255,255,255,0.06) !important;
+    border: 1px solid rgba(139,92,246,0.12) !important;
     transition: background var(--transition-speed), border var(--transition-speed);
 }
 .tab-nav {
@@ -454,20 +454,20 @@ body, .wrap { background: transparent !important; }
     transition: all 0.2s ease;
 }
 .tab-nav button:hover:not(.selected) {
-    color: #94a3b8 !important;
-    background: rgba(255,255,255,0.05) !important;
+    color: #8b95c0 !important;
+    background: rgba(255,255,255,0.04) !important;
 }
 
 .prose h2, .prose > h2 {
     font-size: 1.15rem !important;
     font-weight: 700 !important;
-    color: #cbd5e1 !important;
+    color: #b4bcd6 !important;
     margin-top: 0.5em !important;
     margin-bottom: 0.6em !important;
 }
 
 label {
-    color: #94a3b8 !important;
+    color: #8b95c0 !important;
     font-size: 0.82rem !important;
     font-weight: 600 !important;
     letter-spacing: 0.03em !important;
@@ -479,7 +479,7 @@ select, .dropdown-wrap {
     background: rgba(255,255,255,0.05) !important;
     border: 1px solid rgba(255,255,255,0.1) !important;
     border-radius: 8px !important;
-    color: #e2e8f0 !important;
+    color: #d4d8ec !important;
     transition: all var(--transition-speed);
 }
 select:focus, select:hover {
@@ -488,10 +488,10 @@ select:focus, select:hover {
 }
 
 input[type="text"], textarea, .textbox-wrap {
-    background: rgba(255,255,255,0.05) !important;
-    border: 1px solid rgba(255,255,255,0.1) !important;
+    background: rgba(255,255,255,0.07) !important;
+    border: 1px solid rgba(139,92,246,0.2) !important;
     border-radius: 8px !important;
-    color: #e2e8f0 !important;
+    color: #d4d8ec !important;
     transition: all var(--transition-speed);
 }
 input[type="text"]:focus, textarea:focus {
@@ -515,9 +515,9 @@ button.primary:hover:not(.disabled), .primary .wrap:hover:not(.disabled) {
 
 button.secondary {
     background: rgba(255,255,255,0.06) !important;
-    border: 1px solid rgba(255,255,255,0.1) !important;
+    border: 1px solid rgba(139,92,246,0.15) !important;
     border-radius: 10px !important;
-    color: #cbd5e1 !important;
+    color: #b4bcd6 !important;
     font-weight: 500 !important;
     transition: all 0.2s ease !important;
 }
@@ -527,8 +527,8 @@ button.secondary:hover {
 }
 
 .delete-btn {
-    background: rgba(239,68,68,0.12) !important;
-    border: 1px solid rgba(239,68,68,0.25) !important;
+    background: rgba(239,68,68,0.1) !important;
+    border: 1px solid rgba(239,68,68,0.2) !important;
     color: #fca5a5 !important;
     border-radius: 10px !important;
     font-weight: 500 !important;
@@ -541,29 +541,30 @@ button.secondary:hover {
 }
 
 .checkbox-row {
-    background: rgba(255,255,255,0.04) !important;
+    background: rgba(255,255,255,0.03) !important;
     border-radius: 8px !important;
     padding: 8px 12px !important;
-    border: 1px solid rgba(255,255,255,0.06) !important;
+    border: 1px solid rgba(139,92,246,0.1) !important;
 }
 checkbox label {
-    color: #cbd5e1 !important;
+    color: #b4bcd6 !important;
     text-transform: none !important;
     letter-spacing: normal !important;
     font-size: 0.9rem !important;
 }
 
 .gallery {
-    background: rgba(255,255,255,0.02) !important;
+    background: rgba(255,255,255,0.04) !important;
     border-radius: 12px !important;
-    border: 1px solid rgba(255,255,255,0.06) !important;
+    border: 1px solid rgba(139,92,246,0.12) !important;
     padding: 8px !important;
     transition: all var(--transition-speed);
 }
 
 .slider-container {
-    background: rgba(255,255,255,0.04) !important;
+    background: rgba(255,255,255,0.03) !important;
     border-radius: 8px !important;
+    border: 1px solid rgba(139,92,246,0.1) !important;
 }
 .slider-container input {
     background: rgba(139,92,246,0.3) !important;
@@ -591,8 +592,8 @@ checkbox label {
 
 [data-testid="image"] {
     border-radius: 12px !important;
-    border: 1px solid rgba(255,255,255,0.08) !important;
-    box-shadow: 0 4px 20px rgba(0,0,0,0.4) !important;
+    border: 1px solid rgba(139,92,246,0.15) !important;
+    box-shadow: 0 4px 20px rgba(0,0,0,0.3) !important;
     transition: border var(--transition-speed), box-shadow var(--transition-speed);
 }
 
@@ -600,46 +601,46 @@ checkbox label {
 
 ::-webkit-scrollbar { width: 6px; }
 ::-webkit-scrollbar-track { background: transparent; }
-::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.1); border-radius: 3px; }
-::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.2); }
+::-webkit-scrollbar-thumb { background: rgba(139,92,246,0.2); border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: rgba(139,92,246,0.35); }
 
 .queue-item-current {
-    background: linear-gradient(135deg, rgba(139,92,246,0.15), rgba(96,165,250,0.12)) !important;
-    border: 1px solid rgba(139,92,246,0.3) !important;
+    background: linear-gradient(135deg, rgba(139,92,246,0.12), rgba(96,165,250,0.1)) !important;
+    border: 1px solid rgba(139,92,246,0.25) !important;
     border-radius: 10px !important;
-    box-shadow: 0 2px 10px rgba(139,92,246,0.1) !important;
+    box-shadow: 0 2px 10px rgba(139,92,246,0.08) !important;
 }
 
 .component-info {
-    color: #64748b !important;
+    color: #8b95c0 !important;
     font-size: 0.78rem !important;
     font-style: italic !important;
 }
 
 /* ================= LIGHT MODE ================= */
 [data-theme="light"] main {
-    background: linear-gradient(160deg, #f8fafc 0%, #f1f5f9 40%, #e0e7ff 100%) !important;
+    background: linear-gradient(160deg, #f5f4f1 0%, #edecea 40%, #e8e6e1 100%) !important;
 }
 
 [data-theme="light"] .tabitem {
-    background: rgba(255,255,255,0.85) !important;
-    border: 1px solid rgba(0,0,0,0.08) !important;
-    box-shadow: 0 2px 8px rgba(0,0,0,0.06) !important;
+    background: rgba(250,249,247,0.85) !important;
+    border: 1px solid rgba(0,0,0,0.06) !important;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.04) !important;
 }
 [data-theme="light"] .tab-nav {
-    background: rgba(0,0,0,0.04) !important;
+    background: rgba(0,0,0,0.02) !important;
 }
 [data-theme="light"] .tab-nav button.selected {
-    background: rgba(139,92,246,0.15) !important;
-    color: #1e293b !important;
-    box-shadow: 0 2px 8px rgba(139,92,246,0.1) !important;
+    background: rgba(139,92,246,0.12) !important;
+    color: #3a4150 !important;
+    box-shadow: 0 2px 8px rgba(139,92,246,0.08) !important;
 }
 [data-theme="light"] .tab-nav button:not(.selected) {
-    color: #64748b !important;
+    color: #6b7488 !important;
 }
 [data-theme="light"] .tab-nav button:hover:not(.selected) {
-    color: #1e293b !important;
-    background: rgba(139,92,246,0.06) !important;
+    color: #3a4150 !important;
+    background: rgba(139,92,246,0.04) !important;
 }
 
 [data-theme="light"] .prose h1, [data-theme="light"] .prose > h1 {
@@ -648,92 +649,92 @@ checkbox label {
     -webkit-text-fill-color: transparent !important;
 }
 [data-theme="light"] .prose p, [data-theme="light"] .prose > p {
-    color: #475569 !important;
+    color: #5a6373 !important;
 }
 [data-theme="light"] .prose h2, [data-theme="light"] .prose > h2 {
-    color: #1e293b !important;
+    color: #3a4150 !important;
 }
 
 [data-theme="light"] label {
-    color: #475569 !important;
+    color: #5a6373 !important;
 }
 
 [data-theme="light"] select, [data-theme="light"] .dropdown-wrap {
-    background: #ffffff !important;
-    border: 1px solid rgba(0,0,0,0.15) !important;
-    color: #1e293b !important;
+    background: #faf9f7 !important;
+    border: 1px solid rgba(0,0,0,0.1) !important;
+    color: #3a4150 !important;
 }
 [data-theme="light"] select option {
-    background: #ffffff !important;
-    color: #1e293b !important;
+    background: #faf9f7 !important;
+    color: #3a4150 !important;
 }
 
 [data-theme="light"] input[type="text"],
 [data-theme="light"] textarea,
 [data-theme="light"] .textbox-wrap {
-    background: #ffffff !important;
-    border: 1px solid rgba(0,0,0,0.15) !important;
-    color: #1e293b !important;
+    background: #faf9f7 !important;
+    border: 1px solid rgba(0,0,0,0.1) !important;
+    color: #3a4150 !important;
 }
 
 [data-theme="light"] checkbox label {
-    color: #1e293b !important;
+    color: #3a4150 !important;
 }
 
 [data-theme="light"] .gallery {
-    background: rgba(255,255,255,0.7) !important;
+    background: rgba(250,249,247,0.8) !important;
     border: 1px solid rgba(0,0,0,0.06) !important;
 }
 
 [data-theme="light"] .slider-container {
-    background: rgba(255,255,255,0.8) !important;
+    background: rgba(250,249,247,0.8) !important;
 }
 [data-theme="light"] .slider-container input {
-    background: rgba(139,92,246,0.25) !important;
+    background: rgba(139,92,246,0.2) !important;
 }
 
 [data-theme="light"] button.secondary {
-    background: rgba(0,0,0,0.05) !important;
-    border: 1px solid rgba(0,0,0,0.1) !important;
-    color: #334155 !important;
+    background: rgba(0,0,0,0.03) !important;
+    border: 1px solid rgba(0,0,0,0.08) !important;
+    color: #4a5263 !important;
 }
 [data-theme="light"] button.secondary:hover {
-    background: rgba(0,0,0,0.1) !important;
-    border-color: rgba(139,92,246,0.4) !important;
+    background: rgba(0,0,0,0.07) !important;
+    border-color: rgba(139,92,246,0.3) !important;
 }
 
 [data-theme="light"] .delete-btn {
-    background: rgba(239,68,68,0.1) !important;
-    border: 1px solid rgba(239,68,68,0.25) !important;
-    color: #dc2626 !important;
+    background: rgba(239,68,68,0.08) !important;
+    border: 1px solid rgba(239,68,68,0.2) !important;
+    color: #b91c1c !important;
 }
 [data-theme="light"] .delete-btn:hover {
-    background: rgba(239,68,68,0.2) !important;
-    border-color: rgba(239,68,68,0.5) !important;
-    color: #b91c1c !important;
+    background: rgba(239,68,68,0.15) !important;
+    border-color: rgba(239,68,68,0.4) !important;
+    color: #991b1b !important;
 }
 
 [data-theme="light"] .markdown-status-success {
-    background: rgba(34,197,94,0.08) !important;
+    background: rgba(34,197,94,0.06) !important;
     border: 1px solid rgba(34,197,94,0.2) !important;
     color: #15803d !important;
 }
 [data-theme="light"] .markdown-status-error {
-    background: rgba(239,68,68,0.08) !important;
+    background: rgba(239,68,68,0.06) !important;
     border: 1px solid rgba(239,68,68,0.2) !important;
-    color: #dc2626 !important;
+    color: #b91c1c !important;
 }
 
 [data-theme="light"] [data-testid="image"] {
-    border: 1px solid rgba(0,0,0,0.1) !important;
-    box-shadow: 0 4px 20px rgba(0,0,0,0.1) !important;
+    border: 1px solid rgba(0,0,0,0.08) !important;
+    box-shadow: 0 4px 20px rgba(0,0,0,0.06) !important;
 }
 
 [data-theme="light"] ::-webkit-scrollbar-thumb {
-    background: rgba(0,0,0,0.15); border-radius: 3px;
+    background: rgba(0,0,0,0.12); border-radius: 3px;
 }
 [data-theme="light"] ::-webkit-scrollbar-thumb:hover {
-    background: rgba(0,0,0,0.25);
+    background: rgba(0,0,0,0.2);
 }
 
 [data-theme="light"] .queue-item-current {
@@ -743,7 +744,7 @@ checkbox label {
 }
 
 [data-theme="light"] .component-info {
-    color: #94a3b8 !important;
+    color: #8b95a0 !important;
 }
 
 /* ================= THEME TOGGLE ================= */
