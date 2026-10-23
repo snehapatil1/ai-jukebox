@@ -50,8 +50,8 @@ html body .gradio-container, html body .gradio-container.dark {
   width: 100% !important; min-width: 0 !important; box-sizing: border-box;
 }
 .gradio-container > .main { max-width: 100% !important; }
-html, body, main { background: var(--aj-page) !important; color: var(--aj-text) !important; }
-main { min-height: 100vh; padding: 24px !important; }
+html, body, main { background: var(--aj-page) !important; color: var(--aj-text) !important; margin: 0 !important; padding: 0 !important; }
+main { min-height: 0 !important; padding: 0 !important; max-height: none !important; }
 .gradio-container .block:not(.hide-container), .gradio-container .tabitem,
 .gradio-container .form, .gradio-container .group {
   background: var(--aj-panel) !important; border-color: var(--aj-line) !important;

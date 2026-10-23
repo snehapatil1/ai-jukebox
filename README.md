@@ -55,6 +55,12 @@ cp .env.example .env      # then set LLM_API_KEY to your class key
 python app.py             # -> http://127.0.0.1:7860
 ```
 
+### Windows launch and port conflicts
+
+Double-click `launch.bat`. It opens an already-running AI Jukebox instead of starting a duplicate. If no instance is running, it starts the app, waits until it is ready, and opens **http://127.0.0.1:7860** automatically. Keep the server console open; use **Ctrl+C** there when you want to stop it. An unrecognized service on the port is left untouched.
+
+`app.py` explicitly passes `server_name="127.0.0.1"` and `server_port=7860` to `app.launch()`. Setting `GRADIO_SERVER_PORT` alone does not override the explicit argument. If another application needs 7860, identify that process first; do not kill an unknown listener. Choose an available local port in `app.launch()` and update the URL in `launch.bat` accordingly. The local UI port is separate from the class service endpoints—do not change those to fix a local port conflict.
+
 Configuration comes from environment variables or the gitignored `.env`.
 The app fails fast at startup if `LLM_API_KEY` is missing. Base URLs default
 to the class endpoints and can be overridden per service (see `.env.example`).
