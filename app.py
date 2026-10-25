@@ -16,7 +16,6 @@ import html
 import logging
 import shutil
 import time
-import base64
 from pathlib import Path
 from urllib.parse import quote
 
@@ -54,23 +53,18 @@ def _elapsed(started: float) -> str:
 
 
 def _serve_url(p: Path) -> str:
-    """Return a data URI for cover art images, or Gradio's /file= URL for audio."""
+    """Return local file path for images; let Gradio handle serving."""
     covers_base = config.ROOT / "data" / "covers"
     try:
-        rel = p.relative_to(covers_base)
-        ext = p.suffix.lower()
-        if ext in (".png", ".jpg", ".jpeg", ".webp"):
-            # Embed image as base64 data URI — bypasses Gradio file serve allowlist entirely.
-            full_path = covers_base / rel.name
-            if full_path.is_file():
-                with open(full_path, "rb") as f:
-                    data = f.read()
-                mime_map = {".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".webp": "image/webp"}
-                mime = mime_map[ext]
-                b64 = base64.b64encode(data).decode("ascii")
-                return f"data:{mime};base64,{b64}"
+        p.relative_to(covers_base)
     except ValueError:
         pass
+    else:
+        ext = p.suffix.lower()
+        if ext in (".png", ".jpg", ".jpeg", ".webp"):
+            full_path = covers_base / p.name
+            if full_path.is_file():
+                return str(full_path)  # Gradio will cache & serve it
     # Fallback: let Gradio serve it
     return f"/gradio_api/file={quote(str(p))}"
 
