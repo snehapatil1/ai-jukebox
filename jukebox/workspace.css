@@ -1,0 +1,131 @@
+/* AI Jukebox — dark theme with vibrant accent colors. */
+:root, [data-theme="dark"] {
+  --aj-page: #0f1123; --aj-panel: rgba(30, 34, 62, 0.85);
+  --aj-input: #2a2d4a; --aj-hover: #3b3f6e;
+  --aj-line: rgba(139, 92, 246, 0.3); --aj-accent: #8b5cf6;
+  --aj-coral: #f97316; --aj-blue: #06b6d4; --aj-pink: #ec4899;
+}
+[data-theme="light"] {
+  --aj-page: #faf8ff; --aj-panel: rgba(255, 255, 255, 0.92);
+  --aj-input: #ede9fe; --aj-hover: #ddd6fe;
+  --aj-line: rgba(139, 92, 246, 0.25); --aj-accent: #7c3aed;
+  --aj-coral: #ea580c; --aj-blue: #0891b2; --aj-pink: #db2777;
+}
+
+/* Page sizing — compact, scrollable when content overflows */
+html, body { margin: 0 !important; padding: 0 !important; min-height: 100vh !important; background: var(--aj-page) !important; }
+.gradio-container { max-width: 1100px !important; margin-inline: auto !important; display: flex !important; flex-direction: column !important; }
+.gradio-container > .main { padding: 0 16px !important; flex: 1 1 auto !important; }
+.gradio-container main { padding: 0 !important; }
+
+/* Header — compact */
+.gradio-container .aj-header { padding: 10px 4px 8px !important; margin: 0 !important; border: 0 !important; }
+.aj-header .aj-eyebrow { color: var(--aj-coral) !important; font-size: 10px; margin-bottom: 2px !important; }
+#mainTitle { font-size: 22px; font-weight: 700; margin: 0; }
+#mainDesc { font-size: 11px; margin: 2px 0 0 !important; }
+#themeToggle { border-radius: 20px !important; font-size: 11px; min-height: 30px !important; padding: 4px 12px !important; }
+
+/* Tabs — compact pill bar */
+.gradio-tabs { width: 100% !important; }
+.gradio-tabs > .tab-nav { gap: 6px !important; padding: 0 0 4px !important; }
+.gradio-tabs > .tab-nav button {
+  padding: 6px 16px !important; text-align: center !important;
+  border: 1px solid transparent !important; border-radius: 999px !important;
+  font-size: 12px; font-weight: 600; transition: all 0.2s ease !important;
+  background: rgba(139, 92, 246, 0.08) !important;
+  color: var(--aj-text-muted, #a0a4c0) !important;
+}
+.gradio-tabs > .tab-nav button.selected {
+  background: linear-gradient(135deg, rgba(139, 92, 246, 0.3), rgba(6, 182, 212, 0.2)) !important;
+  color: var(--aj-text, #e8eaf4) !important;
+  border: 1px solid rgba(139, 92, 246, 0.4) !important;
+  box-shadow: 0 0 12px rgba(139, 92, 246, 0.2) !important;
+}
+.gradio-tabs > .tabitem { padding: 6px 0 !important; }
+
+/* Gallery — tight */
+.gradio-gallery { height: clamp(100px, 16vh, 160px) !important; }
+.gradio-gallery .thumbnail-item { border-radius: 8px !important; overflow: hidden; }
+.gradio-gallery img { object-fit: cover; }
+.gradio-gallery .caption { font-size: 11px; padding: 4px !important; }
+
+/* Compact row for library buttons */
+[variant="compact"] { gap: 6px !important; }
+[variant="compact"] button { min-width: 60px !important; font-size: 11px !important; padding: 5px 8px !important; height: auto !important; }
+
+/* Delete button — coral accent */
+button.stop {
+  background: rgba(249, 115, 22, 0.15) !important; color: var(--aj-coral) !important;
+  border: 1px solid rgba(249, 115, 22, 0.4) !important; border-radius: var(--radius-sm) !important;
+  font-weight: 600 !important; transition: all 0.2s ease !important;
+}
+button.stop:hover {
+  background: rgba(249, 115, 22, 0.25) !important; border-color: var(--aj-coral) !important;
+  box-shadow: 0 0 12px rgba(249, 115, 22, 0.3) !important; transform: translateY(-1px);
+}
+
+/* Play/Skip primary buttons — compact */
+button.primary {
+  background: linear-gradient(135deg, #7c3aed, #6d28d9) !important;
+  color: #ffffff !important; border: 1px solid #8b5cf6 !important;
+  box-shadow: 0 2px 8px rgba(124, 58, 237, 0.3) !important;
+  transition: all 0.2s ease !important;
+  height: auto !important; padding: 8px 20px !important;
+}
+button.primary:hover {
+  background: linear-gradient(135deg, #8b5cf6, #7c3aed) !important;
+  box-shadow: 0 4px 16px rgba(124, 58, 237, 0.4) !important; transform: translateY(-1px);
+}
+button.primary:disabled, button[disabled], button:disabled {
+  opacity: 0.4 !important; filter: grayscale(0.5); cursor: not-allowed;
+}
+
+/* Cover image */
+.gradio-image img { border-radius: 10px !important; object-fit: contain !important; }
+.gradio-image { min-height: 0 !important; border: 0 !important; padding: 0 !important; }
+
+/* Queue list */
+.aj-queue-item { padding: 3px 0 !important; font-size: 12px; }
+.aj-queue-empty { font-size: 11px; text-align: left !important; padding: 4px 0 !important; color: var(--aj-text-muted); }
+
+/* Audio player — minimal */
+.gradio-audio { min-height: 40px !important; max-height: 44px !important; border: 0 !important; }
+.gradio-audio .waveform-container { min-width: 0; height: 28px !important; }
+.gradio-audio audio { height: 32px !important; }
+
+/* Accordion panels — very compact */
+.gradio-accordion summary {
+  background: rgba(139, 92, 246, 0.1) !important;
+  border-radius: var(--radius-md) !important;
+  padding: 5px 10px !important;
+  font-weight: 600 !important;
+  font-size: 12px !important;
+}
+.gradio-accordion .content { max-height: 120px !important; overflow-y: auto !important; }
+
+/* Heading sizes — compact */
+.gradio-container .prose h2 { font-size: 15px !important; margin-top: 6px !important; margin-bottom: 6px !important; }
+.gradio-container .prose h3 { font-size: 13px !important; margin-top: 4px !important; margin-bottom: 4px !important; }
+.gradio-container .prose p { font-size: 12px !important; }
+
+/* Studio panel — compact */
+#studioPanel .form { max-height: none !important; padding: 0 !important; }
+#studioPanel .prose { font-size: 12px !important; line-height: 1.4 !important; }
+#studioPanel textarea { font-size: 11px !important; min-height: 48px !important; max-height: 80px !important; }
+#studioPanel .form label { font-size: 11px !important; }
+#studioPanel select, #studioPanel input[type="text"], #studioPanel input[type="number"] { font-size: 11px !important; min-height: 32px !important; }
+
+/* Player panel — compact */
+#playerPanel .form { max-height: none !important; padding: 0 !important; }
+#playerPanel .prose { font-size: 12px !important; line-height: 1.4 !important; }
+#playerPanel .form label { font-size: 11px !important; }
+
+/* Markdown status lines */
+.gradio-container .prose strong { font-size: 13px !important; }
+.gradio-markdown p { font-size: 12px !important; margin: 3px 0 !important; }
+
+/* Input fields — compact */
+input[type="text"], textarea, select, input[type="number"] { font-size: 11px !important; }
+
+/* Dropdown */
+.gradio-dropdown { min-height: 30px !important; }
