@@ -515,10 +515,15 @@ def build_app() -> gr.Blocks:
             # ---------------- right column: player + queue ----------------
             with gr.Column(scale=3):
                 gr.Markdown("### 🎧 Now Playing")
-                now_cover = gr.Image(label="", height=280, interactive=False)
+                # Toolbar buttons default to including "share", which only works
+                # on Hugging Face Spaces (throws ShareError locally). Keep
+                # download + fullscreen, drop share.
+                now_cover = gr.Image(label="", height=280, interactive=False,
+                                     buttons=["download", "fullscreen"])
                 now_status = gr.Markdown("Nothing playing — generate a song or press **Play all**.")
                 lyrics_section = gr.HTML('')
-                now_audio = gr.Audio(label="", type="filepath", interactive=False, autoplay=False)
+                now_audio = gr.Audio(label="", type="filepath", interactive=False,
+                                     autoplay=False, buttons=["download"])
                 with gr.Row():
                     play_btn = gr.Button("▶️ Play", variant="primary", size="lg")
                     skip_btn = gr.Button("⏭️ Skip", interactive=False, size="lg")
