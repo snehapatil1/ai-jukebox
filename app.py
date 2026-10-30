@@ -15,6 +15,7 @@ from __future__ import annotations
 import html
 import logging
 import shutil
+import tempfile
 import time
 from pathlib import Path
 from urllib.parse import quote
@@ -155,6 +156,53 @@ def _spawn_prefetch(state: dict, song: Song, voice_state: dict) -> None:
 # ---------------------------------------------------------------------------
 # state machine
 # ---------------------------------------------------------------------------
+# Gradio's own temp root (the file route's created_paths): per-event audio
+# copies placed here are ALWAYS servable, unlike data/ or generic temp dirs.
+_GRADIO_TMP = Path(tempfile.gettempdir()) / "gradio"
+
+
+def _player_state(player_state) -> dict:
+    """Normalise the gr.State value into a queue-state dict.
+
+    Older wiring once left a non-dict value (a lyrics HTML string) in the
+    state slot when a handler returned more values than its outputs list
+    declared; every later state-machine event then crashed with a ValueError
+    and the player froze. A non-dict state self-heals to a clean queue here.
+    """
+    return dict(player_state) if isinstance(player_state, dict) else dict(INITIAL_PLAYER)
+
+
+def _audio_value(path: Path, autoplay: bool):
+    """Audio value the frontend can always load, from a URL that differs on
+    every event.
+
+    A raw data path may hit Gradio's file route as unregistered (403 "File
+    not allowed"), and bytes values are cached by content hash — same song,
+    same URL — which the frontend treats as unchanged, so the playhead is
+    never reset. A per-event copy under Gradio's own temp root (the route's
+    created_paths) is always served AND has a unique URL, so every load
+    reloads the media and starts from 0:00.
+    """
+    if not path.is_file():
+        return gr.update(value=None)
+    _GRADIO_TMP.mkdir(exist_ok=True, parents=True)
+    src = _GRADIO_TMP / f"aj-player-{time.time_ns()}.mp3"
+    shutil.copy2(path, src)
+    # Prune by the COPY's creation time (the ns in its name), never by file
+    # mtime: copy2 preserves the song's mtime, so mtime-sorted pruning would
+    # delete the copies of OLDER songs first — exactly the 403 the user saw
+    # ("grey player" for older library songs).
+    for old in sorted(
+        _GRADIO_TMP.glob("aj-player-*.mp3"),
+        key=lambda p: int(p.stem.rsplit("-", 1)[-1]),
+    )[:-12]:
+        try:
+            old.unlink(missing_ok=True)
+        except OSError:
+            pass
+    return gr.update(value=str(src), autoplay=autoplay)
+
+
 def _start_song(state: dict, idx: int, voice_state: dict) -> tuple:
     state["pos"], state["mode"] = idx, "song"
     song = LIBRARY.get(state["queue"][idx])
@@ -170,7 +218,7 @@ def _start_song(state: dict, idx: int, voice_state: dict) -> tuple:
         _queue_html(state),
         status_line,
         gr.update(value=str(service.cover_display_path(song))),
-        gr.update(value=str(song.abs_audio), autoplay=True),
+        _audio_value(song.abs_audio, True),
         gr.update(interactive=True),
         lyrics_section,
         state,
@@ -182,7 +230,7 @@ def advance(player_state: dict, voice_state: dict) -> tuple:
 
     song -> DJ clip -> next song -> ... ; state machine lives in gr.State.
     """
-    state = dict(player_state)
+    state = _player_state(player_state)
     if state["mode"] == "idle":
         return _queue_html(state), "Nothing is playing.", gr.update(), gr.update(), gr.update(interactive=False), '', state
 
@@ -190,10 +238,14 @@ def advance(player_state: dict, voice_state: dict) -> tuple:
         nxt_i = state["pos"] + 1
         if nxt_i >= len(state["queue"]):
             state["mode"] = "idle"
+            # Keep the last song loaded (paused at 0:00) instead of removing
+            # the audio: the user can replay it without the track vanishing.
+            last = LIBRARY.get(state["queue"][state["pos"]])
+            last_audio = _audio_value(last.abs_audio, False) if last else gr.update(value=None)
             return (
                 _queue_html(state),
                 "🏁 Queue finished — thanks for listening!",
-                gr.update(), gr.update(value=None), gr.update(interactive=False), '', state,
+                gr.update(), last_audio, gr.update(interactive=False), '', state,
             )
         prev, nxt = LIBRARY.get(state["queue"][state["pos"]]), LIBRARY.get(state["queue"][nxt_i])
         if prev is None or nxt is None:
@@ -204,7 +256,7 @@ def advance(player_state: dict, voice_state: dict) -> tuple:
             return (
                 _queue_html(state),
                 f"🎙️ **DJ:** {html.escape(text or '')}",
-                gr.update(), gr.update(value=str(clip)), gr.update(interactive=True), '', state,
+                gr.update(), _audio_value(clip, True), gr.update(interactive=True), '', state,
             )
         gr.Info("DJ commentary is unavailable right now — skipping to the next song.")
         return _start_song(state, nxt_i, voice_state)
@@ -213,10 +265,12 @@ def advance(player_state: dict, voice_state: dict) -> tuple:
     nxt_i = state["pos"] + 1
     if nxt_i >= len(state["queue"]):
         state["mode"] = "idle"
+        last = LIBRARY.get(state["queue"][state["pos"]])
+        last_audio = _audio_value(last.abs_audio, False) if last else gr.update(value=None)
         return (
             _queue_html(state),
             "🏁 Queue finished — thanks for listening!",
-            gr.update(), gr.update(value=None), gr.update(interactive=False), '', state,
+            gr.update(), last_audio, gr.update(interactive=False), '', state,
         )
     return _start_song(state, nxt_i, voice_state)
 
@@ -230,7 +284,7 @@ def select_for_player(song_id: str | None, player_state: dict) -> tuple:
     song = LIBRARY.get(song_id) if song_id else None
     if song is None:
         return (gr.update(),) * 7
-    state = dict(player_state or INITIAL_PLAYER)
+    state = _player_state(player_state)
     state["queue"] = [sid for sid in state["queue"] if LIBRARY.get(sid) is not None]
     if song_id not in state["queue"]:
         state["queue"].append(song_id)
@@ -246,12 +300,12 @@ def select_for_player(song_id: str | None, player_state: dict) -> tuple:
     return (_queue_html(state),
             status_md,
             gr.update(value=str(service.cover_display_path(song))),
-            gr.update(value=str(song.abs_audio), autoplay=False),
+            _audio_value(song.abs_audio, False),
             gr.update(interactive=True), lyrics_section, state)
 
 
 def play(player_state: dict, voice_state: dict) -> tuple:
-    state = dict(player_state)
+    state = _player_state(player_state)
     if state["mode"] != "idle":
         state["mode"], state["pos"] = "song", max(0, state["pos"])
     elif not state["queue"]:
@@ -279,12 +333,12 @@ def play_all(player_state: dict, voice_state: dict) -> tuple:
 
 
 def add_to_queue(song_id: str, player_state: dict) -> tuple:
-    state = dict(player_state)
+    state = _player_state(player_state)
     if not song_id:
-        return _queue_html(state), "Select a song in the Library tab first."
+        return _queue_html(state), "Select a song in the Library tab first.", state
     song = LIBRARY.get(song_id)
     if song is None:
-        return _queue_html(state), "That song no longer exists."
+        return _queue_html(state), "That song no longer exists.", state
     state["queue"].append(song_id)
     return _queue_html(state), f"➕ Added “{song.title}” to the queue.", state
 
@@ -404,7 +458,7 @@ def retry_cover(
 # ---------------------------------------------------------------------------
 def delete_song(song_id: str | None, player_state: dict):
     # Missing/stale selection must never empty the visible library.
-    state = player_state or dict(INITIAL_PLAYER)
+    state = _player_state(player_state)
 
     def response(message, selection=None):
         items, choices = _library_views()
@@ -555,7 +609,7 @@ def build_app() -> gr.Blocks:
         play_all_btn.click(
             play_all,
             inputs=[player_state, voice_state],
-            outputs=[queue_html, now_status, now_cover, now_audio, skip_btn, player_state],
+            outputs=[queue_html, now_status, now_cover, now_audio, skip_btn, lyrics_section, player_state],
         )
         play_btn.click(
             play,
