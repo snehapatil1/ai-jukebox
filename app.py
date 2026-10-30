@@ -53,19 +53,13 @@ def _elapsed(started: float) -> str:
 
 
 def _serve_url(p: Path) -> str:
-    """Return local file path for images; let Gradio handle serving."""
-    covers_base = config.ROOT / "data" / "covers"
-    try:
-        p.relative_to(covers_base)
-    except ValueError:
-        pass
-    else:
-        ext = p.suffix.lower()
-        if ext in (".png", ".jpg", ".jpeg", ".webp"):
-            full_path = covers_base / p.name
-            if full_path.is_file():
-                return str(full_path)  # Gradio will cache & serve it
-    # Fallback: let Gradio serve it
+    """Serve a repo file through Gradio's file route (origin-relative URL).
+
+    A raw local path (e.g. /Users/.../data/covers/x.png) inside gr.HTML is
+    resolved by the browser against the page origin and 404s — the broken
+    queue thumbnails came from exactly that. data/covers is registered in
+    launch(allowed_paths=...) so this URL works from any working directory.
+    """
     return f"/gradio_api/file={quote(str(p))}"
 
 
@@ -83,8 +77,12 @@ def _voice_ref(voice_state: dict) -> Path | None:
 
 def _library_views() -> tuple[list, list]:
     songs = LIBRARY.all()
+    # gr.Gallery post-processes plain local paths into served URLs itself —
+    # passing a "/gradio_api/file=..." string here makes it treat the URL as a
+    # file path and raise InvalidPathError (Error banner in the Library tab).
+    # The queue's gr.HTML has no such post-processing, so it uses _serve_url().
     items = [
-        (_serve_url(service.cover_display_path(s)), f"{s.title} · {s.style} · {s.mood}")
+        (str(service.cover_display_path(s)), f"{s.title} · {s.style} · {s.mood}")
         for s in songs
     ]
     choices = [(s.display_label(), s.id) for s in songs]
@@ -117,7 +115,7 @@ def _queue_html(state: dict) -> str:
             f"<div style='display:flex;align-items:center;gap:12px;'> "
             f"<img src='{cover_url}' style='width:44px;height:44px;border-radius:8px;object-fit:cover;'/>"
             f"<div><b style='color:#e2e8f0'>{icon} {marker}{title}</b>{credit}"
-            f"<span style='color:#64748b;font-size:11px'>{meta}</span></div></div></div>"
+            f"<span style='color:#64748b;font-size:11px;display:block;margin-top:2px'>{meta}</span></div></div></div>"
         )
     return "<div style='display:flex;flex-direction:column;gap:4px;'>\n" + "\n".join(rows) + "\n</div>"
 
@@ -628,6 +626,10 @@ if __name__ == "__main__":
         server_name="127.0.0.1",
         server_port=7860,
         show_error=True,
+        # Cover art lives under data/covers; registering it here lets the
+        # /gradio_api/file= URLs used by queue/gallery thumbnails always be
+        # served, regardless of the working directory the app was launched from.
+        allowed_paths=[str(config.DATA_DIR)],
         theme=gr.themes.Soft(
             primary_hue="violet",
             secondary_hue="indigo",
