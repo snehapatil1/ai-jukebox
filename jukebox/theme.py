@@ -77,6 +77,16 @@ main { min-height: 0 !important; padding: 0 !important; max-height: none !import
   color: var(--aj-text) !important; text-transform: none !important;
 }
 .gradio-container .info, .gradio-container .prose p, #mainDesc { color: var(--aj-muted) !important; }
+/* Generate-tab lyrics code block: Gradio's dark-skin code styling maps to
+   neutral tokens that this theme remaps to --aj-text, so in dark mode the
+   <pre> background and text both became light lavender (#f0efff) — unreadable.
+   Force the app's input/text tokens in dark mode only; light mode keeps
+   Gradio's default code styling exactly as before. */
+[data-theme="dark"] .gradio-container .prose pre,
+[data-theme="dark"] .gradio-container .prose pre code {
+  background: var(--aj-input) !important;
+  color: var(--aj-text) !important;
+}
 #mainTitle { color: var(--aj-text); letter-spacing: -0.035em; font-weight: 650; line-height: 1.2; }
 .gradio-container .tab-nav { border-color: var(--aj-line) !important; gap: 16px; padding-bottom: 0; }
 .gradio-container .tab-nav button {

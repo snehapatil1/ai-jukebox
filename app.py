@@ -122,6 +122,24 @@ def _queue_html(state: dict) -> str:
     return "<div style='display:flex;flex-direction:column;gap:4px;'>\n" + "\n".join(rows) + "\n</div>"
 
 
+def _lyrics_section(lyrics: str) -> str:
+    """Collapsible lyrics panel for the player, styled with the app's theme
+    variables (light/dark aware). Shared by _start_song and select_for_player
+    so the two can't drift apart (select_for_player used to hardcode dark
+    colors, leaving a dark box in light mode)."""
+    text = (lyrics or "").strip()
+    if not text:
+        return ""
+    escaped = html.escape(text)
+    return (
+        '<details style="margin-top:8px">'
+        '<summary style="cursor:pointer;font-size:12px;color:var(--aj-accent);font-weight:600">Lyrics</summary>'
+        '<p style="color:var(--aj-text);font-size:12px;white-space:pre-line;margin:6px 0 0;'
+        'padding:8px;background:var(--aj-input);border-radius:8px;line-height:1.5">'
+        f"{escaped}</p></details>"
+    )
+
+
 def _now_status(song: Song, mode: str) -> str:
     kind = "instrumental" if song.instrumental else "vocal"
     state = "**Now playing:**" if mode == "song" else "**Up next:**"
@@ -146,11 +164,7 @@ def _start_song(state: dict, idx: int, voice_state: dict) -> tuple:
         state["mode"] = "idle"
         return _queue_html(state), "That song is no longer in the library.", gr.update(), gr.update(value=None), gr.update(interactive=False), '', state
     _spawn_prefetch(state, song, voice_state)
-    lyrics_text = (song.lyrics or '').strip()
-    lyrics_section = ''
-    if lyrics_text:
-        escaped_lyrics = html.escape(lyrics_text)
-        lyrics_section = f'<details style="margin-top:8px"><summary style="cursor:pointer;font-size:12px;color:var(--aj-accent);font-weight:600">Lyrics</summary><p style="color:var(--aj-text);font-size:12px;white-space:pre-line;margin:6px 0 0;padding:8px;background:var(--aj-input);border-radius:8px;line-height:1.5">{escaped_lyrics}</p></details>'
+    lyrics_section = _lyrics_section(song.lyrics)
     status = f'**Now playing:** {html.escape(song.title)} — {html.escape(song.style)} · {html.escape(song.mood)}{lyrics_section}'
     credit = f" · by {html.escape(song.created_by)}" if song.created_by.strip() else ""
     status_line = f'**Now playing:** {html.escape(song.title)} — {html.escape(song.style)} · {html.escape(song.mood)}{credit}'
@@ -229,11 +243,7 @@ def select_for_player(song_id: str | None, player_state: dict) -> tuple:
         return (_queue_html(state), f'Audio file is missing for "{html.escape(song.title)}".',
                 gr.update(value=str(service.cover_display_path(song))),
                 gr.update(value=None), gr.update(interactive=False), '', '', state)
-    lyrics_text = (song.lyrics or '').strip()
-    lyrics_section = ''
-    if lyrics_text:
-        escaped_lyrics = html.escape(lyrics_text)
-        lyrics_section = f'<details style="margin-top:8px"><summary style="cursor:pointer;font-size:12px;color:#c5b4f4;font-weight:600">Lyrics</summary><p style="color:#e2e8f0;font-size:12px;white-space:pre-line;margin:6px 0 0;padding:8px;background:#41435d;border-radius:8px;line-height:1.5">{escaped_lyrics}</p></details>'
+    lyrics_section = _lyrics_section(song.lyrics)
     status_md = f'**Ready to play:** {html.escape(song.title)} — {html.escape(song.style)} · {html.escape(song.mood)}{credit}'
     return (_queue_html(state),
             status_md,
