@@ -17,6 +17,7 @@ import logging
 import shutil
 import tempfile
 import time
+import threading
 from pathlib import Path
 from urllib.parse import quote
 
@@ -346,25 +347,100 @@ def add_to_queue(song_id: str, player_state: dict) -> tuple:
 # ---------------------------------------------------------------------------
 # generation pipeline
 # ---------------------------------------------------------------------------
+def _status_html(main: str, started: float, hint: str | None = None, done: bool = False) -> str:
+    """Status box: indeterminate animated working bar + stage text + live timer.
+
+    ``done=True`` renders the terminal state (no bar, no timer) used for both
+    success and failure.
+    """
+    if done:
+        return f"<div class='aj-status'><div class='aj-status-main'>{main}</div></div>"
+    bar = "<div class='aj-progress'><div class='aj-progress-bar'></div></div>"
+    time_html = f"<span class='aj-status-time'>{_elapsed(started)}</span>"
+    hint_html = f"<div class='aj-status-hint'>{hint}</div>" if hint else ""
+    return (
+        f"<div class='aj-status'>{bar}"
+        f"<div class='aj-status-main'><span class='aj-status-text'>{main}</span>{time_html}</div>"
+        f"{hint_html}</div>"
+    )
+
+
+def _friendly_error(exc: Exception) -> str:
+    """User-safe error text — no service names, endpoints, ports, or credentials."""
+    from jukebox.clients import ServiceError
+
+    if isinstance(exc, service.PipelineError):
+        return str(exc)
+    if isinstance(exc, ServiceError):
+        return "A service couldn't be reached — please try again."
+    if isinstance(exc, TimeoutError):
+        return "The request timed out — please try again."
+    return "Something went wrong — please try again."
+
+
+def _run_status(fn, main: str, started: float, hint: str | None = None):
+    """Run a blocking pipeline stage while yielding a ticking status line.
+
+    The music/lyrics/image services are synchronous, so the stage runs on a
+    worker thread and the generator yields one status update per second —
+    that is what makes the elapsed timer count up live. Exceptions from the
+    worker are re-raised here so the caller's error path handles them.
+    """
+    holder: dict = {}
+
+    def worker() -> None:
+        try:
+            holder["value"] = fn()
+        except BaseException as exc:  # noqa: BLE001 - forwarded to the caller
+            holder["error"] = exc
+
+    thread = threading.Thread(target=worker, daemon=True)
+    thread.start()
+    noop_gallery, noop_pick = gr.update(), gr.update()
+    while thread.is_alive():
+        yield (gr.update(interactive=False),
+               _status_html(main, started, hint),
+               "", noop_gallery, noop_pick)
+        time.sleep(1)
+    thread.join()
+    if "error" in holder:
+        raise holder["error"]
+    return holder["value"]
+
+
 def generate_song(created_by: str, style: str, mood: str, duration: float, instrumental: bool, theme: str):
     started = time.monotonic()
-    status = lambda msg: f"{msg} · elapsed {_elapsed(started)}"
     noop_gallery, noop_pick = gr.update(), gr.update()
 
-    yield gr.update(interactive=False), status("✍️ Writing title and lyrics…"), "", noop_gallery, noop_pick
+    if instrumental:
+        yield (gr.update(interactive=False),
+               _status_html("Generating music…", started, "This can take a minute or two."),
+               "", noop_gallery, noop_pick)
+    else:
+        yield (gr.update(interactive=False),
+               _status_html("Writing lyrics…", started),
+               "", noop_gallery, noop_pick)
+
     try:
         duration = max(config.DURATION_MIN, min(float(duration), config.DURATION_MAX))
 
-        draft = service.write_song_draft(style, mood, duration, instrumental, theme)
-        yield (gr.update(interactive=False),
-               status(f"🎵 Composing “{draft['title']}” (ACE-Step is working — this can take a minute)…"),
-               "", noop_gallery, noop_pick)
+        draft = yield from _run_status(
+            lambda: service.write_song_draft(
+                style, mood, duration, instrumental, theme,
+                existing_titles=tuple(s.title for s in LIBRARY.all())),
+            "Writing lyrics…" if not instrumental else "Generating music…",
+            started,
+            None if not instrumental else "This can take a minute or two.",
+        )
 
-        audio_path, meta = service.compose_music(style, mood, theme or "", duration, draft["lyrics"])
-        yield (gr.update(interactive=False),
-               status("🎨 Painting cover art (FLUX)…"), "", noop_gallery, noop_pick)
+        audio_path, meta = yield from _run_status(
+            lambda: service.compose_music(style, mood, theme or "", duration, draft["lyrics"]),
+            f"Generating “{draft['title']}”…",
+            started,
+            "This can take a minute or two.",
+        )
 
-        cover_rel = None
+        cover_rel = ""
         cover_prmpt = ""
         try:
             tmp = Song(
@@ -372,7 +448,10 @@ def generate_song(created_by: str, style: str, mood: str, duration: float, instr
                 duration_sec=duration, instrumental=instrumental,
                 theme=(theme or "").strip(), lyrics=draft["lyrics"],
             )
-            cover_abs, cover_prmpt = service.generate_cover(tmp)
+            cover_abs, cover_prmpt = yield from _run_status(
+                lambda: service.generate_cover(tmp),
+                "Creating cover art…", started,
+            )
             cover_rel = str(cover_abs.relative_to(config.ROOT))
         except Exception as exc:  # noqa: BLE001 - cover failure is non-fatal
             log.warning("Cover generation failed: %s", exc)
@@ -405,13 +484,16 @@ def generate_song(created_by: str, style: str, mood: str, duration: float, instr
             result += "_Instrumental track — no lyrics._"
         items, choices = _library_views()
         yield (gr.update(interactive=True),
-               status("✅ Song generated and added to the library."),
+               _status_html("✅ Added to library", started, done=True),
                result,
                gr.update(value=items), gr.update(choices=choices, value=song.id))
+    except GeneratorExit:
+        raise
     except Exception as exc:  # noqa: BLE001 - surface any pipeline failure in the UI
         log.exception("Song generation failed")
         yield (gr.update(interactive=True),
-               status(f"❌ Generation failed: {exc}"), "", noop_gallery, noop_pick)
+               _status_html(f"❌ {_friendly_error(exc)}", started, done=True),
+               "", noop_gallery, noop_pick)
 
 
 def retry_cover(
@@ -549,7 +631,7 @@ def build_app() -> gr.Blocks:
                         instrumental = gr.Checkbox(False, label="Instrumental (no lyrics)")
                         theme = gr.Textbox("", label="Theme (optional)", placeholder="e.g. a robot band playing on the moon")
                         gen_btn = gr.Button("🎵 Generate song", variant="primary")
-                    gen_status = gr.Markdown("")
+                    gen_status = gr.HTML("")
                     gen_result = gr.Markdown("")
 
                 with gr.Tab("📚 Library"):

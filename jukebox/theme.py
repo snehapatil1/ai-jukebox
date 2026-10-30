@@ -174,6 +174,39 @@ main { min-height: 0 !important; padding: 0 !important; max-height: none !import
 }
 .aj-queue-item b { color: var(--aj-text) !important; }
 .aj-queue-item span, .aj-queue-empty { color: var(--aj-muted) !important; }
+/* === GENERATION STATUS BOX === */
+.aj-status {
+  display: flex; flex-direction: column; gap: 5px;
+  padding: 10px 12px; border-radius: 8px;
+  background: var(--aj-input); border: 1px solid var(--aj-line);
+}
+.aj-progress {
+  height: 4px; border-radius: 999px; overflow: hidden;
+  background: rgba(139, 92, 246, 0.18);
+}
+.aj-progress-bar {
+  width: 35%; height: 100%; border-radius: 999px;
+  background: linear-gradient(90deg, var(--aj-accent), var(--aj-blue));
+  animation: aj-indeterminate 1.1s ease-in-out infinite;
+}
+@keyframes aj-indeterminate {
+  0% { transform: translateX(-110%); }
+  100% { transform: translateX(320%); }
+}
+.aj-status-main {
+  display: flex; align-items: baseline; gap: 6px; min-width: 0;
+  color: var(--aj-text); font-size: 13px; font-weight: 600;
+  line-height: 1.4;
+}
+.aj-status-text {
+  flex: 0 1 auto; min-width: 0; white-space: nowrap;
+  overflow: hidden; text-overflow: ellipsis;
+}
+.aj-status-time {
+  flex: 0 0 auto; color: var(--aj-muted); font-size: 12px; font-weight: 500;
+  font-variant-numeric: tabular-nums; white-space: nowrap;
+}
+.aj-status-hint { color: var(--aj-muted) !important; font-size: 11px; }
 /* Workspace structure: one surface per pane, typography within it. */
 .gradio-container .aj-header {
   display: flex; align-items: center; justify-content: space-between; gap: 24px;
