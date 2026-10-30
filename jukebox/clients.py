@@ -12,6 +12,10 @@ from __future__ import annotations
 import base64
 import json
 import logging
+import re
+import shutil
+import subprocess
+import tempfile
 import time
 import urllib.parse
 import uuid
@@ -25,6 +29,59 @@ log = logging.getLogger("jukebox.clients")
 
 class ServiceError(RuntimeError):
     """Raised when a class service fails or returns an unexpected format."""
+
+
+_SIL_START_RE = re.compile(r"silence_start:\s*([\d.]+)")
+_SIL_END_RE = re.compile(r"silence_end:\s*([\d.]+)")
+
+
+def _trim_trailing_silence(audio: bytes, threshold_db: float = -35.0, keep_s: float = 0.15) -> bytes:
+    """Cut the dead-air tail ACE-Step appends to every render.
+
+    Measured: the audio_duration ACE-Step returns always ends in ~0.7-2.3 s of
+    near-silence (the target duration includes it). If the final silence
+    period is longer than 0.5 s, cut the file there (plus a short keep) with
+    a frame-accurate copy so nothing is re-encoded. Fails open: any error or
+    a short/absent tail returns the original bytes untouched.
+    """
+    try:
+        ffprobe = shutil.which("ffprobe")
+        ffmpeg = shutil.which("ffmpeg")
+        if not ffprobe or not ffmpeg:
+            return audio
+        with tempfile.TemporaryDirectory() as tmp:
+            src = f"{tmp}/in.mp3"
+            dst = f"{tmp}/out.mp3"
+            with open(src, "wb") as fh:
+                fh.write(audio)
+            dur_p = subprocess.run([ffprobe, "-v", "error", "-show_entries",
+                                    "format=duration", "-of", "csv=p=0", src],
+                                   capture_output=True, text=True, timeout=60)
+            dur = float(dur_p.stdout.strip() or 0)
+            det = subprocess.run([ffmpeg, "-hide_banner", "-i", src, "-af",
+                                  f"silencedetect=noise={threshold_db}dB:d=0.1",
+                                  "-f", "null", "-"],
+                                 capture_output=True, text=True, timeout=120)
+            starts = [float(x) for x in _SIL_START_RE.findall(det.stderr)]
+            ends = [float(x) for x in _SIL_END_RE.findall(det.stderr)]
+            # Only periods that run to the very end of the file are tails;
+            # an intro/verse gap must never be treated as one (it used to
+            # truncate an otherwise clean track to a fraction of its length).
+            tails = [s for s, e in zip(starts, ends) if e >= dur - 0.75]
+            if not tails:
+                return audio
+            tail = dur - max(tails)
+            if tail <= 0.5:
+                return audio
+            cut = max(0.0, max(tails) + keep_s)
+            subprocess.run([ffmpeg, "-hide_banner", "-y", "-i", src,
+                            "-t", f"{cut:.3f}", "-c:a", "copy", dst],
+                           capture_output=True, text=True, timeout=120, check=True)
+            with open(dst, "rb") as fh:
+                return fh.read()
+    except Exception:  # noqa: BLE001 — trimming is best-effort
+        log.warning("Trailing-silence trim skipped: %s", exc_info=True)
+        return audio
 
 
 # ---------------------------------------------------------------------------
@@ -218,6 +275,9 @@ def generate_music(
         audio = _music.get(first["file"], timeout=180).content
         if not audio:
             raise ServiceError("Music task finished but downloaded 0 bytes")
+        # ACE-Step pads every render with ~0.7-2.3 s of trailing silence;
+        # trim it so songs end with music, not dead air.
+        audio = _trim_trailing_silence(audio)
         return audio, {**meta, "task_id": task_id}
 
     raise ServiceError(f"Music generation timed out after {max_wait:.0f}s (task {task_id})")

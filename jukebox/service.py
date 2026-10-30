@@ -50,9 +50,26 @@ def write_song_draft(
     if instrumental:
         return {"title": title, "lyrics": ""}
 
-    words = max(24, int(duration_sec * 2.2))  # ~2.2 sung words per second
+    # Duration-aware budget: ACE-Step sings what fits the duration, so short
+    # songs get a small per-second budget and few sections (a full
+    # [Intro]/[Verse 1]/[Chorus]/[Verse 2]/[Bridge]/[Outro] structure simply
+    # does not get sung in 10-20 s — only the first lines do).
+    if duration_sec <= 20:
+        ratio, words = 1.3, max(10, int(duration_sec * 1.3))
+        sections = ("For short songs use ONLY [Verse 1], plus a brief [Chorus] if it fits. "
+                    "NO [Intro], [Verse 2], [Bridge], or [Outro] — they will not be sung.")
+    elif duration_sec <= 45:
+        ratio, words = 1.4, max(14, int(duration_sec * 1.4))
+        sections = ("Use [Verse 1], [Chorus], and end with the SAME [Chorus] written out "
+                    "verbatim again (a chorus must appear twice; the repeat closes the song). "
+                    "No [Intro], [Verse 2], [Bridge], or [Outro].")
+    else:
+        ratio, words = 1.6, max(24, int(duration_sec * 1.6))
+        sections = ("Use [Verse 1], [Chorus], [Verse 2], the SAME [Chorus] verbatim once more, "
+                    "and a short [Outro]. Skip [Intro] and [Bridge].")
     lyrics = clients.qwen_chat_with_fallback(
-        prompts.LYRICS_SYSTEM.format(dur=int(duration_sec), words=words),
+        prompts.LYRICS_SYSTEM.format(dur=int(duration_sec), words=words,
+                                     sections=sections, ratio=ratio),
         prompts.LYRICS_USER.format(style=style, mood=mood, theme=theme or "none",
                                    dur=int(duration_sec)),
         max_tokens=2048,
