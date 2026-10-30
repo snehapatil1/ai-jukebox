@@ -17,6 +17,7 @@ import shutil
 import subprocess
 import tempfile
 import time
+import random
 import urllib.parse
 import uuid
 
@@ -162,6 +163,7 @@ def qwen_chat_with_fallback(
     user: str,
     *,
     max_tokens: int = 2048,
+    temperature: float = 0.0,
     fallback_truncations: tuple[int, ...] = (120, 40),
 ) -> str:
     """Retry ladder for the reasoning model's occasional empty replies.
@@ -175,7 +177,8 @@ def qwen_chat_with_fallback(
         if len(user) > length:
             candidates.append(f"[shortened prompt]\n{user[:length]}")
     for idx, candidate in enumerate(candidates):
-        content = qwen_chat(system, candidate, max_tokens=max_tokens)
+        content = qwen_chat(system, candidate, max_tokens=max_tokens,
+                            temperature=temperature)
         if content:
             return content
         log.warning("qwen empty content on attempt %d/%d", idx + 1, len(candidates))
@@ -188,13 +191,22 @@ def qwen_chat_with_fallback(
 _img = _Requester(config.BASE_URL_IMAGE)
 
 
-def generate_image(prompt: str, size: str = "1024x1024") -> bytes:
-    """Render an image from a text prompt. Returns PNG bytes."""
-    resp = _img.post(
-        "/images/generations",
-        json_body={"model": config.MODEL_IMAGE, "prompt": prompt, "n": 1, "size": size},
-        timeout=300,
-    )
+def generate_image(prompt: str, size: str = "1024x1024", seed: int | None = None) -> bytes:
+    """Render an image from a text prompt. Returns PNG bytes.
+
+    FLUX (vLLM) honours `seed` deterministically (verified live: the same seed
+    reproduces the identical PNG), so a random seed is sent with every request
+    — without one the service keeps a fixed default and identical prompts
+    produce identical cover art.
+    """
+    body = {
+        "model": config.MODEL_IMAGE,
+        "prompt": prompt,
+        "n": 1,
+        "size": size,
+        "seed": seed if seed is not None else random.randint(0, 2**31 - 1),
+    }
+    resp = _img.post("/images/generations", json_body=body, timeout=300)
     try:
         data = resp.json()["data"][0]
     except (ValueError, KeyError, IndexError) as exc:

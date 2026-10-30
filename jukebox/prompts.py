@@ -24,7 +24,11 @@ TITLE_SYSTEM = (
 )
 
 TITLE_USER = (
-    "Style: {style}\nMood: {mood}\nTheme: {theme}\nTrack: {kind} (no singing)\n\n"
+    "Style: {style}\nMood: {mood}\nTheme: {theme}\nTrack: {kind} (no singing)\n"
+    "{avoid}"
+    "If the theme is none, invent ONE specific fresh scene or subject to seed the song "
+    "(a rainy gas station, a desert motel sign, a midnight laundromat) — do not default "
+    "to generic sunlight, coffee, dancing, or sky imagery.\n"
     "Song title:"
 )
 
@@ -52,6 +56,9 @@ LYRICS_SYSTEM = (
 
 LYRICS_USER = (
     "Style: {style}\nMood: {mood}\nTheme: {theme}\nTarget duration: {dur} seconds\n\n"
+    "If no theme is given, set the lyrics in ONE specific invented scene and stick to it; "
+    "avoid generic sunlight, coffee, and dancing lines. Open with a distinctive first line — "
+    "no floor-scrubbing, socks, footsteps, or entering-a-room openers.\n"
     "Write the original lyrics:"
 )
 

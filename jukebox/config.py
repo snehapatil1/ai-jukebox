@@ -67,6 +67,12 @@ MODEL_MUSIC = _env("MODEL_MUSIC", "")  # e.g. "acestep/acestep-v15-xl-turbo"
 # ---------------------------------------------------------------------------
 DURATION_MIN = 10
 DURATION_MAX = 120          # enforced in code; 10-600 is the service limit
+
+# Sampling temperature for the creative Qwen calls (title, lyrics, cover
+# prompt). 0.0 made every same-settings generation near-deterministic
+# (identical titles/lyrics); the model is a reasoning model with thinking
+# disabled, so higher temperatures produce varied original output.
+CREATIVE_TEMPERATURE = 0.9
 DURATION_DEFAULT = 30
 VOICE_MAX_BYTES = 15 * 1024 * 1024     # TTS reference cap is 20 MB / 60 s
 TTS_MAX_TEXT_CHARS = 4000              # server limit is 4096
