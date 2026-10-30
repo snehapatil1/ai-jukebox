@@ -479,7 +479,7 @@ def build_app() -> gr.Blocks:
                     <h1 id="mainTitle">AI Jukebox</h1>
                     <p id="mainDesc">Your music, made by you.</p>
                 </div>
-                <button type="button" class="theme-toggle" id="themeToggle" title="Switch theme">Light mode</button>
+                <button type="button" class="theme-toggle" id="themeToggle" title="Switch to light mode">Switch to light mode</button>
             </header>
         """)
         player_state = gr.State(INITIAL_PLAYER)

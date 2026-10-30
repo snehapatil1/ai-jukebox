@@ -23,7 +23,9 @@ html, body { margin: 0 !important; padding: 0 !important; min-height: 100vh !imp
 .aj-header .aj-eyebrow { color: var(--aj-coral) !important; font-size: 10px; margin-bottom: 2px !important; }
 #mainTitle { font-size: 22px; font-weight: 700; margin: 0; }
 #mainDesc { font-size: 11px; margin: 2px 0 0 !important; }
-#themeToggle { border-radius: 20px !important; font-size: 11px; min-height: 30px !important; padding: 4px 12px !important; }
+/* Theme toggle is an ACTION BUTTON (sizes in theme.py); keep it button-sized,
+   not a compact label: 40px = the app's secondary-button height. */
+#themeToggle { min-height: 40px !important; padding: 6px 16px !important; }
 
 /* Tabs — compact pill bar */
 .gradio-tabs { width: 100% !important; }

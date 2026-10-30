@@ -100,13 +100,14 @@ main { min-height: 0 !important; padding: 0 !important; max-height: none !import
 }
 .gradio-container .tab-nav button:hover { color: var(--aj-text) !important; }
 
-/* === THEME TOGGLE — HIGH CONTRAST PILL BUTTON === */
+/* === THEME TOGGLE — ACTION BUTTON (switch to the other mode) === */
 .theme-toggle, #themeToggle {
   display: inline-flex !important; align-items: center; justify-content: center;
-  padding: 10px 20px !important; border-radius: 999px !important;
-  font-size: 13px !important; font-weight: 700 !important;
+  padding: 8px 18px !important; border-radius: 999px !important;
+  font-size: 14px !important; font-weight: 600 !important;
+  min-width: 160px !important; min-height: 44px !important;
   cursor: pointer !important; transition: all 0.2s ease !important;
-  text-decoration: none !important; min-width: 130px !important;
+  text-decoration: none !important;
   border: 2px solid transparent !important; outline: none !important;
   letter-spacing: 0.02em;
 }
@@ -132,10 +133,11 @@ main { min-height: 0 !important; padding: 0 !important; max-height: none !import
   box-shadow: 0 4px 20px rgba(124, 58, 237, 0.35) !important;
   transform: translateY(-1px);
 }
-/* Reset: merge #themeToggle into theme-toggle class */
-#themeToggle { all: unset; }
-
-.gradio-container button.secondary, #themeToggle {
+/* Keyboard focus ring — same accent outline pattern as the rest of the app. */
+.theme-toggle:focus-visible, #themeToggle:focus-visible {
+  outline: 2px solid var(--aj-accent) !important; outline-offset: 3px !important;
+}
+.gradio-container button.secondary {
   background: var(--aj-input) !important; color: var(--aj-text) !important;
   border: 1px solid var(--aj-line) !important; border-radius: 6px !important;
 }
@@ -152,12 +154,11 @@ main { min-height: 0 !important; padding: 0 !important; max-height: none !import
   transform: translateY(-1px);
 }
 .gradio-container button.secondary { min-height: 40px; font-weight: 500; box-shadow: none !important; }
-.gradio-container button.secondary:hover, .theme-toggle:hover {
+.gradio-container button.secondary:hover {
   background: var(--aj-hover) !important; transform: translateY(-1px);
 }
 .gradio-container button:disabled { opacity: .55; }
 .gradio-container :focus-visible { outline: 2px solid var(--aj-accent) !important; outline-offset: 3px; }
-#themeToggle { min-width: 44px; min-height: 44px; cursor: pointer; padding: 8px 14px; font-size: 14px; }
 .gradio-container [role="listbox"], .gradio-container .options {
   background: var(--aj-panel) !important; color: var(--aj-text) !important;
   border: 1px solid var(--aj-line) !important; border-radius: var(--radius-sm) !important;
@@ -246,10 +247,12 @@ THEME_JS = """
     document.querySelectorAll('.gradio-container').forEach(el => el.classList.toggle('dark', theme === 'dark'));
     const btn = document.getElementById('themeToggle');
     if (btn) {
-      const label = theme === 'dark' ? 'Light mode' : 'Dark mode';
+      // Action wording: the button always says what it DOES (switch modes),
+      // never the name of the current mode — unambiguous in both themes.
+      const label = theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode';
       if (btn.textContent !== label) btn.textContent = label;
-      btn.title = 'Switch to ' + label.toLowerCase();
-      btn.setAttribute('aria-label', btn.title);
+      btn.title = label;
+      btn.setAttribute('aria-label', label);
       btn.setAttribute('aria-pressed', String(theme === 'light'));
     }
   }
