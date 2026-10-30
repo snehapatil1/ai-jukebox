@@ -95,3 +95,13 @@ scripts/smoke_test.py   # end-to-end sanity checks against the live services
 services (see `PROGRESS.md` for the results and for the two Gradio-6-specific
 findings: `theme`/`css` go to `launch()` not `Blocks()`, and the audio end
 event is exposed as the `stop` event).
+
+## Limitations
+
+- **Short vocal songs are not fully sung.** The music engine can only sing
+  what fits the requested duration: a 10-second vocal track gets roughly a
+  verse's worth of singing and the rest plays instrumentally — lyrics are
+  shown in full but only a short prefix is sung. Longer tracks (30 s+) sing
+  most or all of the text, and the engine may still drop an occasional line
+  or section; instrumental tracks are unaffected.
+
