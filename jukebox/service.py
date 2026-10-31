@@ -30,32 +30,87 @@ def _clean_title(raw: str) -> str:
     return raw[:60]
 
 
+def _norm_title(t: str) -> str:
+    """Lowercased, punctuation-stripped title for duplicate/near-duplicate check."""
+    return re.sub(r"[^a-z0-9 ]", "", (t or "").lower()).strip()
+
+
+def _title_used(title: str, existing_titles) -> bool:
+    """True if *title* equals or near-repeats an existing title (same normalized
+    text, contained in one another, or sharing the first 12 characters — e.g.
+    'Sunlight Spills On The Pavement' vs 'Sunlight Spilled on Lemonade')."""
+    n = _norm_title(title)
+    if not n:
+        return False
+    for other in existing_titles:
+        m = _norm_title(other)
+        if m and (m == n or n in m or m in n or n[:12] == m[:12]):
+            return True
+    return False
+
+
 def write_song_draft(
-    style: str, mood: str, duration_sec: float, instrumental: bool, theme: str
+    style: str, mood: str, duration_sec: float, instrumental: bool, theme: str,
+    *,
+    existing_titles: tuple[str, ...] = (),
 ) -> dict:
     """Return {"title": str, "lyrics": str}. Lyrics is "" for instrumentals."""
     theme = (theme or "").strip()
     duration_sec = max(config.DURATION_MIN, min(float(duration_sec), config.DURATION_MAX))
 
     kind = "instrumental" if instrumental else "vocal"
+    avoid = ""
+    if existing_titles:
+        avoid = ("Do NOT reuse or near-repeat any of these existing titles: "
+                 + ", ".join(existing_titles[:20]) + ".\n")
+    title_user = prompts.TITLE_USER.format(style=style, mood=mood,
+                                           theme=theme or "none", kind=kind, avoid=avoid)
     title = clients.qwen_chat_with_fallback(
-        prompts.TITLE_SYSTEM,
-        prompts.TITLE_USER.format(style=style, mood=mood, theme=theme or "none", kind=kind),
-        max_tokens=2048,
+        prompts.TITLE_SYSTEM, title_user, max_tokens=2048,
+        temperature=config.CREATIVE_TEMPERATURE,
         fallback_truncations=(60,),
     )
     title = _clean_title(title)
+    # If a duplicate still slips through, push back once.
+    if title and _title_used(title, existing_titles):
+        retry = _clean_title(clients.qwen_chat_with_fallback(
+            prompts.TITLE_SYSTEM,
+            title_user + "\nYour previous suggestion was already used in this library. "
+                         "Pick a completely different title.",
+            max_tokens=2048, temperature=config.CREATIVE_TEMPERATURE,
+            fallback_truncations=(60,),
+        ))
+        if retry and not _title_used(retry, existing_titles):
+            title = retry
     if not title:
         raise PipelineError("Could not write a song title — please try again.")
     if instrumental:
         return {"title": title, "lyrics": ""}
 
-    words = max(24, int(duration_sec * 2.2))  # ~2.2 sung words per second
+    # Duration-aware budget: ACE-Step sings what fits the duration, so short
+    # songs get a small per-second budget and few sections (a full
+    # [Intro]/[Verse 1]/[Chorus]/[Verse 2]/[Bridge]/[Outro] structure simply
+    # does not get sung in 10-20 s — only the first lines do).
+    if duration_sec <= 20:
+        ratio, words = 1.3, max(10, int(duration_sec * 1.3))
+        sections = ("For short songs use ONLY [Verse 1], plus a brief [Chorus] if it fits. "
+                    "NO [Intro], [Verse 2], [Bridge], or [Outro] — they will not be sung.")
+    elif duration_sec <= 45:
+        ratio, words = 1.4, max(14, int(duration_sec * 1.4))
+        sections = ("Use [Verse 1], [Chorus], and end with the SAME [Chorus] written out "
+                    "verbatim again (a chorus must appear twice; the repeat closes the song). "
+                    "No [Intro], [Verse 2], [Bridge], or [Outro].")
+    else:
+        ratio, words = 1.6, max(24, int(duration_sec * 1.6))
+        sections = ("Use [Verse 1], [Chorus], [Verse 2], the SAME [Chorus] verbatim once more, "
+                    "and a short [Outro]. Skip [Intro] and [Bridge].")
     lyrics = clients.qwen_chat_with_fallback(
-        prompts.LYRICS_SYSTEM.format(dur=int(duration_sec), words=words),
+        prompts.LYRICS_SYSTEM.format(dur=int(duration_sec), words=words,
+                                     sections=sections, ratio=ratio),
         prompts.LYRICS_USER.format(style=style, mood=mood, theme=theme or "none",
                                    dur=int(duration_sec)),
         max_tokens=2048,
+        temperature=config.CREATIVE_TEMPERATURE,
     )
     if not lyrics:
         raise PipelineError("Could not write lyrics — please try again.")
@@ -168,7 +223,8 @@ def cover_prompt_for(song: Song, *, custom_prompt: str | None = None) -> str:
         theme_or_none=theme_or_none,
         lyrics_section=lyrics_section,
     )
-    text = clients.qwen_chat_with_fallback(prompts.COVER_SYSTEM, user, max_tokens=1024)
+    text = clients.qwen_chat_with_fallback(prompts.COVER_SYSTEM, user, max_tokens=1024,
+                                           temperature=config.CREATIVE_TEMPERATURE)
     if not text:
         raise PipelineError("Could not write a cover prompt — please try again.")
     # strip wrapping quotes the model sometimes adds

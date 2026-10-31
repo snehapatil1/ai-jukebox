@@ -15,7 +15,9 @@ from __future__ import annotations
 import html
 import logging
 import shutil
+import tempfile
 import time
+import threading
 from pathlib import Path
 from urllib.parse import quote
 
@@ -53,19 +55,13 @@ def _elapsed(started: float) -> str:
 
 
 def _serve_url(p: Path) -> str:
-    """Return local file path for images; let Gradio handle serving."""
-    covers_base = config.ROOT / "data" / "covers"
-    try:
-        p.relative_to(covers_base)
-    except ValueError:
-        pass
-    else:
-        ext = p.suffix.lower()
-        if ext in (".png", ".jpg", ".jpeg", ".webp"):
-            full_path = covers_base / p.name
-            if full_path.is_file():
-                return str(full_path)  # Gradio will cache & serve it
-    # Fallback: let Gradio serve it
+    """Serve a repo file through Gradio's file route (origin-relative URL).
+
+    A raw local path (e.g. /Users/.../data/covers/x.png) inside gr.HTML is
+    resolved by the browser against the page origin and 404s — the broken
+    queue thumbnails came from exactly that. data/covers is registered in
+    launch(allowed_paths=...) so this URL works from any working directory.
+    """
     return f"/gradio_api/file={quote(str(p))}"
 
 
@@ -83,8 +79,12 @@ def _voice_ref(voice_state: dict) -> Path | None:
 
 def _library_views() -> tuple[list, list]:
     songs = LIBRARY.all()
+    # gr.Gallery post-processes plain local paths into served URLs itself —
+    # passing a "/gradio_api/file=..." string here makes it treat the URL as a
+    # file path and raise InvalidPathError (Error banner in the Library tab).
+    # The queue's gr.HTML has no such post-processing, so it uses _serve_url().
     items = [
-        (_serve_url(service.cover_display_path(s)), f"{s.title} · {s.style} · {s.mood}")
+        (str(service.cover_display_path(s)), f"{s.title} · {s.style} · {s.mood}")
         for s in songs
     ]
     choices = [(s.display_label(), s.id) for s in songs]
@@ -117,9 +117,27 @@ def _queue_html(state: dict) -> str:
             f"<div style='display:flex;align-items:center;gap:12px;'> "
             f"<img src='{cover_url}' style='width:44px;height:44px;border-radius:8px;object-fit:cover;'/>"
             f"<div><b style='color:#e2e8f0'>{icon} {marker}{title}</b>{credit}"
-            f"<span style='color:#64748b;font-size:11px'>{meta}</span></div></div></div>"
+            f"<span style='color:#64748b;font-size:11px;display:block;margin-top:2px'>{meta}</span></div></div></div>"
         )
     return "<div style='display:flex;flex-direction:column;gap:4px;'>\n" + "\n".join(rows) + "\n</div>"
+
+
+def _lyrics_section(lyrics: str) -> str:
+    """Collapsible lyrics panel for the player, styled with the app's theme
+    variables (light/dark aware). Shared by _start_song and select_for_player
+    so the two can't drift apart (select_for_player used to hardcode dark
+    colors, leaving a dark box in light mode)."""
+    text = (lyrics or "").strip()
+    if not text:
+        return ""
+    escaped = html.escape(text)
+    return (
+        '<details style="margin-top:8px">'
+        '<summary style="cursor:pointer;font-size:12px;color:var(--aj-accent);font-weight:600">Lyrics</summary>'
+        '<p style="color:var(--aj-text);font-size:12px;white-space:pre-line;margin:6px 0 0;'
+        'padding:8px;background:var(--aj-input);border-radius:8px;line-height:1.5">'
+        f"{escaped}</p></details>"
+    )
 
 
 def _now_status(song: Song, mode: str) -> str:
@@ -139,6 +157,53 @@ def _spawn_prefetch(state: dict, song: Song, voice_state: dict) -> None:
 # ---------------------------------------------------------------------------
 # state machine
 # ---------------------------------------------------------------------------
+# Gradio's own temp root (the file route's created_paths): per-event audio
+# copies placed here are ALWAYS servable, unlike data/ or generic temp dirs.
+_GRADIO_TMP = Path(tempfile.gettempdir()) / "gradio"
+
+
+def _player_state(player_state) -> dict:
+    """Normalise the gr.State value into a queue-state dict.
+
+    Older wiring once left a non-dict value (a lyrics HTML string) in the
+    state slot when a handler returned more values than its outputs list
+    declared; every later state-machine event then crashed with a ValueError
+    and the player froze. A non-dict state self-heals to a clean queue here.
+    """
+    return dict(player_state) if isinstance(player_state, dict) else dict(INITIAL_PLAYER)
+
+
+def _audio_value(path: Path, autoplay: bool):
+    """Audio value the frontend can always load, from a URL that differs on
+    every event.
+
+    A raw data path may hit Gradio's file route as unregistered (403 "File
+    not allowed"), and bytes values are cached by content hash — same song,
+    same URL — which the frontend treats as unchanged, so the playhead is
+    never reset. A per-event copy under Gradio's own temp root (the route's
+    created_paths) is always served AND has a unique URL, so every load
+    reloads the media and starts from 0:00.
+    """
+    if not path.is_file():
+        return gr.update(value=None)
+    _GRADIO_TMP.mkdir(exist_ok=True, parents=True)
+    src = _GRADIO_TMP / f"aj-player-{time.time_ns()}.mp3"
+    shutil.copy2(path, src)
+    # Prune by the COPY's creation time (the ns in its name), never by file
+    # mtime: copy2 preserves the song's mtime, so mtime-sorted pruning would
+    # delete the copies of OLDER songs first — exactly the 403 the user saw
+    # ("grey player" for older library songs).
+    for old in sorted(
+        _GRADIO_TMP.glob("aj-player-*.mp3"),
+        key=lambda p: int(p.stem.rsplit("-", 1)[-1]),
+    )[:-12]:
+        try:
+            old.unlink(missing_ok=True)
+        except OSError:
+            pass
+    return gr.update(value=str(src), autoplay=autoplay)
+
+
 def _start_song(state: dict, idx: int, voice_state: dict) -> tuple:
     state["pos"], state["mode"] = idx, "song"
     song = LIBRARY.get(state["queue"][idx])
@@ -146,11 +211,7 @@ def _start_song(state: dict, idx: int, voice_state: dict) -> tuple:
         state["mode"] = "idle"
         return _queue_html(state), "That song is no longer in the library.", gr.update(), gr.update(value=None), gr.update(interactive=False), '', state
     _spawn_prefetch(state, song, voice_state)
-    lyrics_text = (song.lyrics or '').strip()
-    lyrics_section = ''
-    if lyrics_text:
-        escaped_lyrics = html.escape(lyrics_text)
-        lyrics_section = f'<details style="margin-top:8px"><summary style="cursor:pointer;font-size:12px;color:var(--aj-accent);font-weight:600">Lyrics</summary><p style="color:var(--aj-text);font-size:12px;white-space:pre-line;margin:6px 0 0;padding:8px;background:var(--aj-input);border-radius:8px;line-height:1.5">{escaped_lyrics}</p></details>'
+    lyrics_section = _lyrics_section(song.lyrics)
     status = f'**Now playing:** {html.escape(song.title)} — {html.escape(song.style)} · {html.escape(song.mood)}{lyrics_section}'
     credit = f" · by {html.escape(song.created_by)}" if song.created_by.strip() else ""
     status_line = f'**Now playing:** {html.escape(song.title)} — {html.escape(song.style)} · {html.escape(song.mood)}{credit}'
@@ -158,7 +219,7 @@ def _start_song(state: dict, idx: int, voice_state: dict) -> tuple:
         _queue_html(state),
         status_line,
         gr.update(value=str(service.cover_display_path(song))),
-        gr.update(value=str(song.abs_audio), autoplay=True),
+        _audio_value(song.abs_audio, True),
         gr.update(interactive=True),
         lyrics_section,
         state,
@@ -170,7 +231,7 @@ def advance(player_state: dict, voice_state: dict) -> tuple:
 
     song -> DJ clip -> next song -> ... ; state machine lives in gr.State.
     """
-    state = dict(player_state)
+    state = _player_state(player_state)
     if state["mode"] == "idle":
         return _queue_html(state), "Nothing is playing.", gr.update(), gr.update(), gr.update(interactive=False), '', state
 
@@ -178,10 +239,14 @@ def advance(player_state: dict, voice_state: dict) -> tuple:
         nxt_i = state["pos"] + 1
         if nxt_i >= len(state["queue"]):
             state["mode"] = "idle"
+            # Keep the last song loaded (paused at 0:00) instead of removing
+            # the audio: the user can replay it without the track vanishing.
+            last = LIBRARY.get(state["queue"][state["pos"]])
+            last_audio = _audio_value(last.abs_audio, False) if last else gr.update(value=None)
             return (
                 _queue_html(state),
                 "🏁 Queue finished — thanks for listening!",
-                gr.update(), gr.update(value=None), gr.update(interactive=False), '', state,
+                gr.update(), last_audio, gr.update(interactive=False), '', state,
             )
         prev, nxt = LIBRARY.get(state["queue"][state["pos"]]), LIBRARY.get(state["queue"][nxt_i])
         if prev is None or nxt is None:
@@ -192,7 +257,7 @@ def advance(player_state: dict, voice_state: dict) -> tuple:
             return (
                 _queue_html(state),
                 f"🎙️ **DJ:** {html.escape(text or '')}",
-                gr.update(), gr.update(value=str(clip)), gr.update(interactive=True), '', state,
+                gr.update(), _audio_value(clip, True), gr.update(interactive=True), '', state,
             )
         gr.Info("DJ commentary is unavailable right now — skipping to the next song.")
         return _start_song(state, nxt_i, voice_state)
@@ -201,10 +266,12 @@ def advance(player_state: dict, voice_state: dict) -> tuple:
     nxt_i = state["pos"] + 1
     if nxt_i >= len(state["queue"]):
         state["mode"] = "idle"
+        last = LIBRARY.get(state["queue"][state["pos"]])
+        last_audio = _audio_value(last.abs_audio, False) if last else gr.update(value=None)
         return (
             _queue_html(state),
             "🏁 Queue finished — thanks for listening!",
-            gr.update(), gr.update(value=None), gr.update(interactive=False), '', state,
+            gr.update(), last_audio, gr.update(interactive=False), '', state,
         )
     return _start_song(state, nxt_i, voice_state)
 
@@ -218,7 +285,7 @@ def select_for_player(song_id: str | None, player_state: dict) -> tuple:
     song = LIBRARY.get(song_id) if song_id else None
     if song is None:
         return (gr.update(),) * 7
-    state = dict(player_state or INITIAL_PLAYER)
+    state = _player_state(player_state)
     state["queue"] = [sid for sid in state["queue"] if LIBRARY.get(sid) is not None]
     if song_id not in state["queue"]:
         state["queue"].append(song_id)
@@ -229,21 +296,17 @@ def select_for_player(song_id: str | None, player_state: dict) -> tuple:
         return (_queue_html(state), f'Audio file is missing for "{html.escape(song.title)}".',
                 gr.update(value=str(service.cover_display_path(song))),
                 gr.update(value=None), gr.update(interactive=False), '', '', state)
-    lyrics_text = (song.lyrics or '').strip()
-    lyrics_section = ''
-    if lyrics_text:
-        escaped_lyrics = html.escape(lyrics_text)
-        lyrics_section = f'<details style="margin-top:8px"><summary style="cursor:pointer;font-size:12px;color:#c5b4f4;font-weight:600">Lyrics</summary><p style="color:#e2e8f0;font-size:12px;white-space:pre-line;margin:6px 0 0;padding:8px;background:#41435d;border-radius:8px;line-height:1.5">{escaped_lyrics}</p></details>'
+    lyrics_section = _lyrics_section(song.lyrics)
     status_md = f'**Ready to play:** {html.escape(song.title)} — {html.escape(song.style)} · {html.escape(song.mood)}{credit}'
     return (_queue_html(state),
             status_md,
             gr.update(value=str(service.cover_display_path(song))),
-            gr.update(value=str(song.abs_audio), autoplay=False),
+            _audio_value(song.abs_audio, False),
             gr.update(interactive=True), lyrics_section, state)
 
 
 def play(player_state: dict, voice_state: dict) -> tuple:
-    state = dict(player_state)
+    state = _player_state(player_state)
     if state["mode"] != "idle":
         state["mode"], state["pos"] = "song", max(0, state["pos"])
     elif not state["queue"]:
@@ -271,12 +334,12 @@ def play_all(player_state: dict, voice_state: dict) -> tuple:
 
 
 def add_to_queue(song_id: str, player_state: dict) -> tuple:
-    state = dict(player_state)
+    state = _player_state(player_state)
     if not song_id:
-        return _queue_html(state), "Select a song in the Library tab first."
+        return _queue_html(state), "Select a song in the Library tab first.", state
     song = LIBRARY.get(song_id)
     if song is None:
-        return _queue_html(state), "That song no longer exists."
+        return _queue_html(state), "That song no longer exists.", state
     state["queue"].append(song_id)
     return _queue_html(state), f"➕ Added “{song.title}” to the queue.", state
 
@@ -284,25 +347,100 @@ def add_to_queue(song_id: str, player_state: dict) -> tuple:
 # ---------------------------------------------------------------------------
 # generation pipeline
 # ---------------------------------------------------------------------------
+def _status_html(main: str, started: float, hint: str | None = None, done: bool = False) -> str:
+    """Status box: indeterminate animated working bar + stage text + live timer.
+
+    ``done=True`` renders the terminal state (no bar, no timer) used for both
+    success and failure.
+    """
+    if done:
+        return f"<div class='aj-status'><div class='aj-status-main'>{main}</div></div>"
+    bar = "<div class='aj-progress'><div class='aj-progress-bar'></div></div>"
+    time_html = f"<span class='aj-status-time'>{_elapsed(started)}</span>"
+    hint_html = f"<div class='aj-status-hint'>{hint}</div>" if hint else ""
+    return (
+        f"<div class='aj-status'>{bar}"
+        f"<div class='aj-status-main'><span class='aj-status-text'>{main}</span>{time_html}</div>"
+        f"{hint_html}</div>"
+    )
+
+
+def _friendly_error(exc: Exception) -> str:
+    """User-safe error text — no service names, endpoints, ports, or credentials."""
+    from jukebox.clients import ServiceError
+
+    if isinstance(exc, service.PipelineError):
+        return str(exc)
+    if isinstance(exc, ServiceError):
+        return "A service couldn't be reached — please try again."
+    if isinstance(exc, TimeoutError):
+        return "The request timed out — please try again."
+    return "Something went wrong — please try again."
+
+
+def _run_status(fn, main: str, started: float, hint: str | None = None):
+    """Run a blocking pipeline stage while yielding a ticking status line.
+
+    The music/lyrics/image services are synchronous, so the stage runs on a
+    worker thread and the generator yields one status update per second —
+    that is what makes the elapsed timer count up live. Exceptions from the
+    worker are re-raised here so the caller's error path handles them.
+    """
+    holder: dict = {}
+
+    def worker() -> None:
+        try:
+            holder["value"] = fn()
+        except BaseException as exc:  # noqa: BLE001 - forwarded to the caller
+            holder["error"] = exc
+
+    thread = threading.Thread(target=worker, daemon=True)
+    thread.start()
+    noop_gallery, noop_pick = gr.update(), gr.update()
+    while thread.is_alive():
+        yield (gr.update(interactive=False),
+               _status_html(main, started, hint),
+               "", noop_gallery, noop_pick)
+        time.sleep(1)
+    thread.join()
+    if "error" in holder:
+        raise holder["error"]
+    return holder["value"]
+
+
 def generate_song(created_by: str, style: str, mood: str, duration: float, instrumental: bool, theme: str):
     started = time.monotonic()
-    status = lambda msg: f"{msg} · elapsed {_elapsed(started)}"
     noop_gallery, noop_pick = gr.update(), gr.update()
 
-    yield gr.update(interactive=False), status("✍️ Writing title and lyrics…"), "", noop_gallery, noop_pick
+    if instrumental:
+        yield (gr.update(interactive=False),
+               _status_html("Generating music…", started, "This can take a minute or two."),
+               "", noop_gallery, noop_pick)
+    else:
+        yield (gr.update(interactive=False),
+               _status_html("Writing lyrics…", started),
+               "", noop_gallery, noop_pick)
+
     try:
         duration = max(config.DURATION_MIN, min(float(duration), config.DURATION_MAX))
 
-        draft = service.write_song_draft(style, mood, duration, instrumental, theme)
-        yield (gr.update(interactive=False),
-               status(f"🎵 Composing “{draft['title']}” (ACE-Step is working — this can take a minute)…"),
-               "", noop_gallery, noop_pick)
+        draft = yield from _run_status(
+            lambda: service.write_song_draft(
+                style, mood, duration, instrumental, theme,
+                existing_titles=tuple(s.title for s in LIBRARY.all())),
+            "Writing lyrics…" if not instrumental else "Generating music…",
+            started,
+            None if not instrumental else "This can take a minute or two.",
+        )
 
-        audio_path, meta = service.compose_music(style, mood, theme or "", duration, draft["lyrics"])
-        yield (gr.update(interactive=False),
-               status("🎨 Painting cover art (FLUX)…"), "", noop_gallery, noop_pick)
+        audio_path, meta = yield from _run_status(
+            lambda: service.compose_music(style, mood, theme or "", duration, draft["lyrics"]),
+            f"Generating “{draft['title']}”…",
+            started,
+            "This can take a minute or two.",
+        )
 
-        cover_rel = None
+        cover_rel = ""
         cover_prmpt = ""
         try:
             tmp = Song(
@@ -310,7 +448,10 @@ def generate_song(created_by: str, style: str, mood: str, duration: float, instr
                 duration_sec=duration, instrumental=instrumental,
                 theme=(theme or "").strip(), lyrics=draft["lyrics"],
             )
-            cover_abs, cover_prmpt = service.generate_cover(tmp)
+            cover_abs, cover_prmpt = yield from _run_status(
+                lambda: service.generate_cover(tmp),
+                "Creating cover art…", started,
+            )
             cover_rel = str(cover_abs.relative_to(config.ROOT))
         except Exception as exc:  # noqa: BLE001 - cover failure is non-fatal
             log.warning("Cover generation failed: %s", exc)
@@ -343,13 +484,16 @@ def generate_song(created_by: str, style: str, mood: str, duration: float, instr
             result += "_Instrumental track — no lyrics._"
         items, choices = _library_views()
         yield (gr.update(interactive=True),
-               status("✅ Song generated and added to the library."),
+               _status_html("✅ Added to library", started, done=True),
                result,
                gr.update(value=items), gr.update(choices=choices, value=song.id))
+    except GeneratorExit:
+        raise
     except Exception as exc:  # noqa: BLE001 - surface any pipeline failure in the UI
         log.exception("Song generation failed")
         yield (gr.update(interactive=True),
-               status(f"❌ Generation failed: {exc}"), "", noop_gallery, noop_pick)
+               _status_html(f"❌ {_friendly_error(exc)}", started, done=True),
+               "", noop_gallery, noop_pick)
 
 
 def retry_cover(
@@ -396,7 +540,7 @@ def retry_cover(
 # ---------------------------------------------------------------------------
 def delete_song(song_id: str | None, player_state: dict):
     # Missing/stale selection must never empty the visible library.
-    state = player_state or dict(INITIAL_PLAYER)
+    state = _player_state(player_state)
 
     def response(message, selection=None):
         items, choices = _library_views()
@@ -469,7 +613,7 @@ def build_app() -> gr.Blocks:
                     <h1 id="mainTitle">AI Jukebox</h1>
                     <p id="mainDesc">Your music, made by you.</p>
                 </div>
-                <button type="button" class="theme-toggle" id="themeToggle" title="Switch theme">Light mode</button>
+                <button type="button" class="theme-toggle" id="themeToggle" title="Switch to light mode">Switch to light mode</button>
             </header>
         """)
         player_state = gr.State(INITIAL_PLAYER)
@@ -487,7 +631,7 @@ def build_app() -> gr.Blocks:
                         instrumental = gr.Checkbox(False, label="Instrumental (no lyrics)")
                         theme = gr.Textbox("", label="Theme (optional)", placeholder="e.g. a robot band playing on the moon")
                         gen_btn = gr.Button("🎵 Generate song", variant="primary")
-                    gen_status = gr.Markdown("")
+                    gen_status = gr.HTML("")
                     gen_result = gr.Markdown("")
 
                 with gr.Tab("📚 Library"):
@@ -505,10 +649,15 @@ def build_app() -> gr.Blocks:
             # ---------------- right column: player + queue ----------------
             with gr.Column(scale=3):
                 gr.Markdown("### 🎧 Now Playing")
-                now_cover = gr.Image(label="", height=280, interactive=False)
+                # Toolbar buttons default to including "share", which only works
+                # on Hugging Face Spaces (throws ShareError locally). Keep
+                # download + fullscreen, drop share.
+                now_cover = gr.Image(label="", height=280, interactive=False,
+                                     buttons=["download", "fullscreen"])
                 now_status = gr.Markdown("Nothing playing — generate a song or press **Play all**.")
                 lyrics_section = gr.HTML('')
-                now_audio = gr.Audio(label="", type="filepath", interactive=False, autoplay=False)
+                now_audio = gr.Audio(label="", type="filepath", interactive=False,
+                                     autoplay=False, buttons=["download"])
                 with gr.Row():
                     play_btn = gr.Button("▶️ Play", variant="primary", size="lg")
                     skip_btn = gr.Button("⏭️ Skip", interactive=False, size="lg")
@@ -542,7 +691,7 @@ def build_app() -> gr.Blocks:
         play_all_btn.click(
             play_all,
             inputs=[player_state, voice_state],
-            outputs=[queue_html, now_status, now_cover, now_audio, skip_btn, player_state],
+            outputs=[queue_html, now_status, now_cover, now_audio, skip_btn, lyrics_section, player_state],
         )
         play_btn.click(
             play,
@@ -613,6 +762,10 @@ if __name__ == "__main__":
         server_name="127.0.0.1",
         server_port=7860,
         show_error=True,
+        # Cover art lives under data/covers; registering it here lets the
+        # /gradio_api/file= URLs used by queue/gallery thumbnails always be
+        # served, regardless of the working directory the app was launched from.
+        allowed_paths=[str(config.DATA_DIR)],
         theme=gr.themes.Soft(
             primary_hue="violet",
             secondary_hue="indigo",

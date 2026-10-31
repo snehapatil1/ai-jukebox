@@ -77,6 +77,16 @@ main { min-height: 0 !important; padding: 0 !important; max-height: none !import
   color: var(--aj-text) !important; text-transform: none !important;
 }
 .gradio-container .info, .gradio-container .prose p, #mainDesc { color: var(--aj-muted) !important; }
+/* Generate-tab lyrics code block: Gradio's dark-skin code styling maps to
+   neutral tokens that this theme remaps to --aj-text, so in dark mode the
+   <pre> background and text both became light lavender (#f0efff) — unreadable.
+   Force the app's input/text tokens in dark mode only; light mode keeps
+   Gradio's default code styling exactly as before. */
+[data-theme="dark"] .gradio-container .prose pre,
+[data-theme="dark"] .gradio-container .prose pre code {
+  background: var(--aj-input) !important;
+  color: var(--aj-text) !important;
+}
 #mainTitle { color: var(--aj-text); letter-spacing: -0.035em; font-weight: 650; line-height: 1.2; }
 .gradio-container .tab-nav { border-color: var(--aj-line) !important; gap: 16px; padding-bottom: 0; }
 .gradio-container .tab-nav button {
@@ -90,13 +100,14 @@ main { min-height: 0 !important; padding: 0 !important; max-height: none !import
 }
 .gradio-container .tab-nav button:hover { color: var(--aj-text) !important; }
 
-/* === THEME TOGGLE — HIGH CONTRAST PILL BUTTON === */
+/* === THEME TOGGLE — ACTION BUTTON (switch to the other mode) === */
 .theme-toggle, #themeToggle {
   display: inline-flex !important; align-items: center; justify-content: center;
-  padding: 10px 20px !important; border-radius: 999px !important;
-  font-size: 13px !important; font-weight: 700 !important;
+  padding: 8px 18px !important; border-radius: 999px !important;
+  font-size: 14px !important; font-weight: 600 !important;
+  min-width: 160px !important; min-height: 44px !important;
   cursor: pointer !important; transition: all 0.2s ease !important;
-  text-decoration: none !important; min-width: 130px !important;
+  text-decoration: none !important;
   border: 2px solid transparent !important; outline: none !important;
   letter-spacing: 0.02em;
 }
@@ -122,10 +133,11 @@ main { min-height: 0 !important; padding: 0 !important; max-height: none !import
   box-shadow: 0 4px 20px rgba(124, 58, 237, 0.35) !important;
   transform: translateY(-1px);
 }
-/* Reset: merge #themeToggle into theme-toggle class */
-#themeToggle { all: unset; }
-
-.gradio-container button.secondary, #themeToggle {
+/* Keyboard focus ring — same accent outline pattern as the rest of the app. */
+.theme-toggle:focus-visible, #themeToggle:focus-visible {
+  outline: 2px solid var(--aj-accent) !important; outline-offset: 3px !important;
+}
+.gradio-container button.secondary {
   background: var(--aj-input) !important; color: var(--aj-text) !important;
   border: 1px solid var(--aj-line) !important; border-radius: 6px !important;
 }
@@ -142,12 +154,11 @@ main { min-height: 0 !important; padding: 0 !important; max-height: none !import
   transform: translateY(-1px);
 }
 .gradio-container button.secondary { min-height: 40px; font-weight: 500; box-shadow: none !important; }
-.gradio-container button.secondary:hover, .theme-toggle:hover {
+.gradio-container button.secondary:hover {
   background: var(--aj-hover) !important; transform: translateY(-1px);
 }
 .gradio-container button:disabled { opacity: .55; }
 .gradio-container :focus-visible { outline: 2px solid var(--aj-accent) !important; outline-offset: 3px; }
-#themeToggle { min-width: 44px; min-height: 44px; cursor: pointer; padding: 8px 14px; font-size: 14px; }
 .gradio-container [role="listbox"], .gradio-container .options {
   background: var(--aj-panel) !important; color: var(--aj-text) !important;
   border: 1px solid var(--aj-line) !important; border-radius: var(--radius-sm) !important;
@@ -163,6 +174,39 @@ main { min-height: 0 !important; padding: 0 !important; max-height: none !import
 }
 .aj-queue-item b { color: var(--aj-text) !important; }
 .aj-queue-item span, .aj-queue-empty { color: var(--aj-muted) !important; }
+/* === GENERATION STATUS BOX === */
+.aj-status {
+  display: flex; flex-direction: column; gap: 5px;
+  padding: 10px 12px; border-radius: 8px;
+  background: var(--aj-input); border: 1px solid var(--aj-line);
+}
+.aj-progress {
+  height: 4px; border-radius: 999px; overflow: hidden;
+  background: rgba(139, 92, 246, 0.18);
+}
+.aj-progress-bar {
+  width: 35%; height: 100%; border-radius: 999px;
+  background: linear-gradient(90deg, var(--aj-accent), var(--aj-blue));
+  animation: aj-indeterminate 1.1s ease-in-out infinite;
+}
+@keyframes aj-indeterminate {
+  0% { transform: translateX(-110%); }
+  100% { transform: translateX(320%); }
+}
+.aj-status-main {
+  display: flex; align-items: baseline; gap: 6px; min-width: 0;
+  color: var(--aj-text); font-size: 13px; font-weight: 600;
+  line-height: 1.4;
+}
+.aj-status-text {
+  flex: 0 1 auto; min-width: 0; white-space: nowrap;
+  overflow: hidden; text-overflow: ellipsis;
+}
+.aj-status-time {
+  flex: 0 0 auto; color: var(--aj-muted); font-size: 12px; font-weight: 500;
+  font-variant-numeric: tabular-nums; white-space: nowrap;
+}
+.aj-status-hint { color: var(--aj-muted) !important; font-size: 11px; }
 /* Workspace structure: one surface per pane, typography within it. */
 .gradio-container .aj-header {
   display: flex; align-items: center; justify-content: space-between; gap: 24px;
@@ -236,10 +280,12 @@ THEME_JS = """
     document.querySelectorAll('.gradio-container').forEach(el => el.classList.toggle('dark', theme === 'dark'));
     const btn = document.getElementById('themeToggle');
     if (btn) {
-      const label = theme === 'dark' ? 'Light mode' : 'Dark mode';
+      // Action wording: the button always says what it DOES (switch modes),
+      // never the name of the current mode — unambiguous in both themes.
+      const label = theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode';
       if (btn.textContent !== label) btn.textContent = label;
-      btn.title = 'Switch to ' + label.toLowerCase();
-      btn.setAttribute('aria-label', btn.title);
+      btn.title = label;
+      btn.setAttribute('aria-label', label);
       btn.setAttribute('aria-pressed', String(theme === 'light'));
     }
   }

@@ -24,7 +24,11 @@ TITLE_SYSTEM = (
 )
 
 TITLE_USER = (
-    "Style: {style}\nMood: {mood}\nTheme: {theme}\nTrack: {kind} (no singing)\n\n"
+    "Style: {style}\nMood: {mood}\nTheme: {theme}\nTrack: {kind} (no singing)\n"
+    "{avoid}"
+    "If the theme is none, invent ONE specific fresh scene or subject to seed the song "
+    "(a rainy gas station, a desert motel sign, a midnight laundromat) — do not default "
+    "to generic sunlight, coffee, dancing, or sky imagery.\n"
     "Song title:"
 )
 
@@ -36,17 +40,25 @@ LYRICS_SYSTEM = (
     "the song described by the user. Requirements:\n"
     "- 100% original: never reproduce, quote, or closely imitate any existing "
     "song, poem, or artist's style.\n"
-    "- Use clear section tags so the vocal synthesis pipeline can follow the structure: [Intro], [Verse 1], [Chorus], [Verse 2], [Bridge], [Outro]. For instrumental tracks use [Section A], [Section B] etc.\n"
+    "- Use clear section tags so the vocal synthesis pipeline can follow the structure. {sections}\n"
     "- Write genuinely evocative lyrics: concrete imagery over abstract platitudes. Show emotions through scenes and metaphors rather than telling.\n"
     "- Each verse should have internal rhythm and rhyme (near-rhyme is fine). The chorus should be memorable and repeatable.\n"
-    "- Length budget: about 2.2 sung words per second; for {dur} seconds that is "
-    "roughly {words} words total. Don't pad with filler — every line should earn its place.\n"
+    "- The chorus must be written out TWICE with the second [Chorus] tag repeating the first chorus VERBATIM (same words, same order). "
+    "The music engine may drop an occasional block at random, so a chorus that appears only once risks never being sung; "
+    "the repeated block is also standard song form.\n"
+    "- Length budget: about {ratio} sung words per second; for {dur} seconds that is "
+    "roughly {words} words total. Keep the text SHORT enough that every line is actually sung: "
+    "a song can only sing what fits its duration, and lines that don't fit get left out or "
+    "come back as instrumental. If in doubt, cut a line.\n"
     "- Match the requested style and mood precisely; weave in the theme naturally if one is given.\n"
     "Output ONLY the lyrics themselves — no title, no preamble, no quotes."
 )
 
 LYRICS_USER = (
     "Style: {style}\nMood: {mood}\nTheme: {theme}\nTarget duration: {dur} seconds\n\n"
+    "If no theme is given, set the lyrics in ONE specific invented scene and stick to it; "
+    "avoid generic sunlight, coffee, and dancing lines. Open with a distinctive first line — "
+    "no floor-scrubbing, socks, footsteps, or entering-a-room openers.\n"
     "Write the original lyrics:"
 )
 
