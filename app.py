@@ -13,13 +13,15 @@ Features
 from __future__ import annotations
 
 import html
+import json
 import logging
+import os
 import shutil
 import tempfile
 import time
 import threading
 from pathlib import Path
-from urllib.parse import quote
+from urllib.parse import quote, unquote
 
 import gradio as gr
 
@@ -29,7 +31,11 @@ from jukebox.library import Song, SongLibrary
 config.setup_logging()
 config.check_config()
 
-log = logging.getLogger("jukebox.app")
+# --- Load external JS bundle once at import time so it's available everywhere ---
+_JUKEBOX_JS = (Path(__file__).parent / "jukebox" / "theme_js.js").read_text(encoding="utf-8")
+
+LOG = logging.getLogger("jukebox.app")
+log = LOG  # Preserve legacy pipeline logging calls.
 
 LIBRARY = SongLibrary()
 
@@ -78,17 +84,56 @@ def _voice_ref(voice_state: dict) -> Path | None:
 
 
 def _library_views() -> tuple[list, list]:
+    """Return gallery items and dropdown choices."""
     songs = LIBRARY.all()
-    # gr.Gallery post-processes plain local paths into served URLs itself —
-    # passing a "/gradio_api/file=..." string here makes it treat the URL as a
-    # file path and raise InvalidPathError (Error banner in the Library tab).
-    # The queue's gr.HTML has no such post-processing, so it uses _serve_url().
     items = [
         (str(service.cover_display_path(s)), f"{s.title} · {s.style} · {s.mood}")
         for s in songs
     ]
     choices = [(s.display_label(), s.id) for s in songs]
     return items, choices
+
+
+def _cover_for_song(song) -> str:
+    """Return a Gradio-safe cover path for a song."""
+    return str(service.cover_display_path(song))
+
+
+def _library_list_html(filter_text: str = "") -> str:
+    """Render the compact song-list panel for gr.HTML.
+
+    Each row shows a small square cover, title (wrapping), genre tag, and mood.
+    *filter_text* is applied client-side by JS; this function always emits the
+    full set so that filtering works without a server round-trip.
+    """
+    songs = LIBRARY.all()
+    if not songs:
+        return ('<div id="songListContainer" class="aj-song-list-wrap">'
+                '<div class="aj-empty-msg">Library is empty.</div></div>')
+
+    rows = []
+    for s in songs:
+        cover_url = _serve_url(service.cover_display_path(s))
+        title_esc = html.escape(s.title)
+        genre_esc = html.escape(s.style)
+        mood_esc = html.escape(s.mood)
+        # data-id holds the JSON-encoded song record for JS side-clicks; includes cover URL so the panel can update without a round-trip
+        row_json = json.dumps({
+            "id": s.id, "title": s.title, "style": s.style, "mood": s.mood,
+            "cover_url": cover_url
+        }, ensure_ascii=False)
+        encoded_id = quote(row_json, safe='')
+        rows.append(
+            f'<div class="aj-song-item" data-id="{encoded_id}">'
+            f'<img class="aj-song-cover" src="{cover_url}" alt="" loading="lazy"/>'
+            f'<div class="aj-song-info wrap">'
+            f'<div class="aj-song-title">{title_esc}</div>'
+            f'<div class="aj-song-tags">'
+            f'<span class="aj-genre-tag">{genre_esc}</span>'
+            f'<span class="aj-mood-tag">{mood_esc}</span>'
+            f'</div></div></div>'
+        )
+    return '<div id="songListContainer" class="aj-song-list-wrap">\n' + "\n".join(rows) + '\n</div>'
 
 
 def _queue_html(state: dict) -> str:
@@ -214,7 +259,7 @@ def _start_song(state: dict, idx: int, voice_state: dict) -> tuple:
     lyrics_section = _lyrics_section(song.lyrics)
     status = f'**Now playing:** {html.escape(song.title)} — {html.escape(song.style)} · {html.escape(song.mood)}{lyrics_section}'
     credit = f" · by {html.escape(song.created_by)}" if song.created_by.strip() else ""
-    status_line = f'**Now playing:** {html.escape(song.title)} — {html.escape(song.style)} · {html.escape(song.mood)}{credit}'
+    status_line = f'### {html.escape(song.title)}\n\n{credit.lstrip(" ·") if credit else ""}\n\n{html.escape(song.style)} · {html.escape(song.mood)} · Now playing'
     return (
         _queue_html(state),
         status_line,
@@ -295,9 +340,9 @@ def select_for_player(song_id: str | None, player_state: dict) -> tuple:
     if not song.abs_audio.is_file():
         return (_queue_html(state), f'Audio file is missing for "{html.escape(song.title)}".',
                 gr.update(value=str(service.cover_display_path(song))),
-                gr.update(value=None), gr.update(interactive=False), '', '', state)
+                gr.update(value=None), gr.update(interactive=False), '', state)
     lyrics_section = _lyrics_section(song.lyrics)
-    status_md = f'**Ready to play:** {html.escape(song.title)} — {html.escape(song.style)} · {html.escape(song.mood)}{credit}'
+    status_md = f'### {html.escape(song.title)}\n\n{credit.lstrip(" ·") if credit else ""}\n\n{html.escape(song.style)} · {html.escape(song.mood)} · Ready to play'
     return (_queue_html(state),
             status_md,
             gr.update(value=str(service.cover_display_path(song))),
@@ -496,6 +541,75 @@ def generate_song(created_by: str, style: str, mood: str, duration: float, instr
                "", noop_gallery, noop_pick)
 
 
+def prepare_cover_brief(song_id, description, artistic_style, palette):
+    """Ask Qwen for an inspectable brief; never mutate the saved song."""
+    song = LIBRARY.get(song_id) if song_id else None
+    if song is None:
+        return "", None, "Select an existing track first.", None, None
+    try:
+        prompt = service.cover_prompt_for(
+            song, user_description=description or "",
+            artistic_style=artistic_style, color_palette=palette or "",
+        )
+        return prompt, song.id, "Prompt ready — edit it below, then generate a preview.", None, None
+    except Exception as exc:  # noqa: BLE001
+        LOG.exception("Cover brief preparation failed")
+        return gr.update(), None, f"❌ {_friendly_error(exc)} Current cover unchanged.", None, None
+
+
+def generate_cover_candidate(song_id, prepared_song_id, final_prompt):
+    """Render the edited final prompt verbatim, without accepting the result."""
+    song = LIBRARY.get(song_id) if song_id else None
+    if song is None or song_id != prepared_song_id:
+        return None, None, "Select a track and prepare its visual brief first (selection changed)."
+    if not final_prompt or not final_prompt.strip():
+        return None, None, "Enter a final prompt before generating. Current cover unchanged."
+    try:
+        cover_abs, _ = service.generate_cover(song, custom_prompt=final_prompt)
+        candidate = {"song_id": song.id, "path": str(cover_abs), "prompt": final_prompt}
+        return str(cover_abs), candidate, f'New cover ready for “{html.escape(song.title)}” — accept it or keep the current cover.'
+    except Exception as exc:  # noqa: BLE001
+        LOG.exception("Cover candidate generation failed")
+        return None, None, f"❌ {_friendly_error(exc)} Current cover unchanged."
+
+
+def render_cover_candidate(song_id, prepared_song_id, final_prompt):
+    """Publish a visible working state before the blocking image request."""
+    yield None, None, "Generating new cover… Current cover is unchanged."
+    yield generate_cover_candidate(song_id, prepared_song_id, final_prompt)
+
+
+def select_cover_track(song_id):
+    """Reset drafts and candidates whenever the native track selection changes."""
+    song = LIBRARY.get(song_id) if song_id else None
+    if song is None:
+        return "", None, None, "", None, None, "Select an existing track for cover art."
+    return (song.theme or song.cover_prompt or "", _cover_for_song(song), None,
+            "", None, None, "Current cover unchanged.")
+
+
+def accept_cover_candidate(song_id, candidate):
+    """The only Studio operation that writes cover fields to the library."""
+    song = LIBRARY.get(song_id) if song_id else None
+    if song is None or not candidate or candidate.get("song_id") != song_id:
+        return (gr.update(), None, None,
+                "No matching candidate for this selection. Generate a new cover for the selected track.", gr.update())
+    try:
+        relative_path = str(Path(candidate["path"]).relative_to(config.ROOT))
+        updated = LIBRARY.update(song_id, cover_path=relative_path, cover_prompt=candidate["prompt"])
+        if updated is None:
+            return gr.update(), None, None, "Track no longer exists. Current cover unchanged.", gr.update()
+        return (_cover_for_song(updated), None, None,
+                f'New cover accepted for “{html.escape(updated.title)}”.', _library_list_html())
+    except Exception as exc:  # noqa: BLE001
+        LOG.exception("Accepting cover failed")
+        return gr.update(), gr.update(), candidate, f"❌ {_friendly_error(exc)}", gr.update()
+
+
+def keep_current_cover():
+    return None, None, "Current cover kept. New candidate discarded."
+
+
 def retry_cover(
     song_id: str, player_state: dict, cover_description: str | None = None,
 ):
@@ -602,156 +716,204 @@ def on_voice_remove(voice_state: dict):
 # ---------------------------------------------------------------------------
 # UI
 # ---------------------------------------------------------------------------
-from jukebox.theme import CUSTOM_CSS, THEME_JS
+from jukebox.theme import CUSTOM_CSS, THEME_JS, DOM_WRAP_JS
+
+def filter_library(query: str = ""):
+    """Native gallery values and exact stable IDs for the filtered list."""
+    query = (query or "").casefold().strip()
+    songs = [s for s in LIBRARY.all() if not query or query in
+             f"{s.title} {s.style} {s.mood}".casefold()]
+    return ([(str(service.cover_display_path(s)), f"{s.title}\n{s.style} · {s.mood}") for s in songs],
+            [s.id for s in songs])
+
+
+def refresh_filtered_library(query: str = ""):
+    """Refresh visible tracks and clear selection without changing playback."""
+    items, ids = filter_library(query)
+    return gr.update(value=items, selected_index=None), ids, None
+
+
+def initialize_session():
+    """Read the live library on each browser load, not when Blocks is built."""
+    items, ids = filter_library()
+    first_id = ids[0] if ids else None
+    choices = [(s.display_label(), s.id) for s in LIBRARY.all()]
+    state = {"queue": [], "pos": 0, "mode": "idle"}
+    player = select_for_player(first_id, state) if first_id else (
+        _queue_html(state), "Select a song from your library.",
+        gr.update(value=None), gr.update(value=None),
+        gr.update(interactive=False), "", state,
+    )
+    return (gr.update(value=items, selected_index=0 if ids else None), ids,
+            gr.update(choices=choices, value=first_id), first_id,
+            *player, *select_cover_track(first_id))
+
 
 def build_app() -> gr.Blocks:
+    items, song_ids = filter_library()
+    first_id = song_ids[0] if song_ids else None
     with gr.Blocks(title="AI Jukebox") as demo:
-        gr.HTML("""
-            <header class="aj-header">
-                <div>
-                    <div class="aj-eyebrow">MUSIC STUDIO</div>
-                    <h1 id="mainTitle">AI Jukebox</h1>
-                    <p id="mainDesc">Your music, made by you.</p>
-                </div>
-                <button type="button" class="theme-toggle" id="themeToggle" title="Switch to light mode">Switch to light mode</button>
-            </header>
-        """)
+        gr.HTML('''<header class="aj-header"><div class="aj-brand"><svg class="aj-logo" viewBox="0 0 64 64" fill="none" aria-hidden="true" focusable="false"><defs><linearGradient id="ajVinylGradient" x1="10" y1="7" x2="54" y2="59" gradientUnits="userSpaceOnUse"><stop stop-color="#c4a5ff"/><stop offset=".5" stop-color="#8955ff"/><stop offset="1" stop-color="#4ed7ed"/></linearGradient></defs><path d="M32 5C17.1 5 5 17.1 5 32s12.1 27 27 27 27-12.1 27-27S46.9 5 32 5Z" fill="url(#ajVinylGradient)" opacity=".12"/><circle cx="32" cy="32" r="22" fill="#10172f" stroke="url(#ajVinylGradient)" stroke-width="3"/><path d="M18 29a14.5 14.5 0 0 1 17-11M46 35a14.5 14.5 0 0 1-17 11" stroke="url(#ajVinylGradient)" stroke-width="2" stroke-linecap="round" opacity=".75"/><circle cx="32" cy="32" r="10" fill="url(#ajVinylGradient)"/><path d="m30 27 7 5-7 5V27Z" fill="white"/><path d="M7 43c-6-1-5-7 2-13M55 21c8-1 10 3 4 9-6 7-18 14-31 18-10 3-19 3-22 0" stroke="url(#ajVinylGradient)" stroke-width="2.5" stroke-linecap="round"/><path d="m49 4 1.4 4.6L55 10l-4.6 1.4L49 16l-1.4-4.6L43 10l4.6-1.4L49 4Z" fill="#d9c8ff"/><circle cx="10" cy="16" r="2" fill="#64d7ed"/></svg><div><h1 id="mainTitle">AI Jukebox</h1><p id="mainDesc">Your music, made by you.</p></div></div><button type="button" id="themeToggle" aria-label="Switch to light theme" title="Switch theme">☀</button></header>''', elem_id="brandHeader")
         player_state = gr.State(INITIAL_PLAYER)
         voice_state = gr.State({})
-
-        with gr.Row():
-            # ---------------- left column: generate + library ----------------
-            with gr.Column(scale=2):
-                with gr.Tab("✨ Generate"):
-                    with gr.Group():
-                        created_by = gr.Textbox("", label="Your name", placeholder="Enter your name for credit")
+        selected_song = gr.State(first_id)
+        gallery_ids = gr.State(song_ids)
+        # Retained compatibility output for the cover acceptance helper.
+        song_list_html = gr.HTML(visible=False, elem_id="songListHTML")
+        with gr.Tabs(selected="library", elem_id="jukeboxTabs"):
+            with gr.Tab("Create", id="create"):
+                with gr.Group(elem_id="studioPanel"):
+                    gr.Markdown("## Create a song\nChoose a sound and tell your story.")
+                    created_by = gr.Textbox("", label="Artist name", placeholder="Your name or band")
+                    with gr.Row():
                         style = gr.Dropdown(GENRES, value="Pop", allow_custom_value=True, label="Genre")
                         mood = gr.Dropdown(MOODS, value="Happy", label="Mood")
-                        duration = gr.Slider(config.DURATION_MIN, 60, value=config.DURATION_DEFAULT, step=5, label="Duration (seconds)")
-                        instrumental = gr.Checkbox(False, label="Instrumental (no lyrics)")
-                        theme = gr.Textbox("", label="Theme (optional)", placeholder="e.g. a robot band playing on the moon")
-                        gen_btn = gr.Button("🎵 Generate song", variant="primary")
-                    gen_status = gr.HTML("")
-                    gen_result = gr.Markdown("")
+                    duration = gr.Slider(config.DURATION_MIN, 60, value=config.DURATION_DEFAULT, step=5, label="Duration (seconds)")
+                    instrumental = gr.Checkbox(False, label="Instrumental (no lyrics)")
+                    theme = gr.Textbox("", label="Theme / Story", lines=3, placeholder="What is your song about?")
+                    gen_btn = gr.Button("Generate Song", variant="primary")
+                    gen_status = gr.HTML('', elem_id="genStatusBox")
+                    gen_result = gr.Markdown('')
+                with gr.Accordion("DJ voice settings", open=False):
+                    voice_upload = gr.Audio(type="filepath", label="Custom DJ voice", sources=["upload"])
+                    voice_status = gr.Markdown("Using default bundled DJ voice.")
+                    remove_voice_btn = gr.Button("Remove custom voice", interactive=False, variant="secondary")
+            with gr.Tab("Library", id="library"):
+                with gr.Row(equal_height=False, elem_id="libraryLayout"):
+                    with gr.Column(scale=3, min_width=0, elem_id="libraryPanel"):
+                        gr.Markdown("## Your library")
+                        lib_search = gr.Textbox("", label="Search your songs", show_label=False,
+                                                placeholder="Search your songs…", elem_id="libSearchBox")
+                        library_gallery = gr.Gallery(items, columns=1, rows=6, height="auto", buttons=[],
+                            allow_preview=False, preview=False, show_label=False,
+                            object_fit="cover", selected_index=0 if items else None,
+                            elem_id="libraryGallery")
+                        with gr.Row():
+                            add_queue_btn = gr.Button("Add to queue", size="sm")
+                            play_all_btn = gr.Button("Play all", variant="primary", size="sm")
+                        with gr.Accordion("Library actions", open=False):
+                            refresh_library_btn = gr.Button("Refresh library", size="sm")
+                            delete_song_btn = gr.Button("Delete selected song", variant="stop", size="sm")
+                        lib_status = gr.Markdown("", elem_classes=["aj-status-hint"])
+                    with gr.Column(scale=4, min_width=0, elem_id="playerPanel"):
+                        gr.Markdown("## Now playing")
+                        with gr.Group(elem_id="nowPlayingPanel"):
+                            now_cover = gr.Image(label="Album artwork", show_label=False, height=250,
+                                                 interactive=False, buttons=["download"], elem_id="nowCover")
+                            now_meta = gr.Markdown("Select a song from your library.", elem_id="nowMeta")
+                            now_audio = gr.Audio(label="Playback", show_label=False, type="filepath",
+                                interactive=False, autoplay=False, buttons=["download"], elem_id="nowAudio")
+                            with gr.Row():
+                                skip_btn = gr.Button("Next track", interactive=False, size="sm", elem_id="skipBtn")
+                            lyrics_section = gr.HTML('', elem_id="lyricsSection")
+                        gr.Markdown("### Up next")
+                        queue_html = gr.HTML(_queue_html(INITIAL_PLAYER), elem_id="queuePanel")
+                        # Reserved UI space only. DJ controls/parameters belong to the team integration.
+                        with gr.Group(elem_id="djOptionsPanel"):
+                            gr.Markdown("### DJ options")
+                            gr.Markdown("Coming soon.",
+                                        elem_classes=["aj-status-hint"])
+                    with gr.Column(scale=4, min_width=0, elem_id="coverArtStudio"):
+                        gr.Markdown("## Cover art studio\nGive your song a visual identity.")
+                        cover_track = gr.Dropdown(choices=[(s.display_label(), s.id) for s in LIBRARY.all()],
+                            value=first_id, label="Editing cover for", interactive=True)
+                        cover_description = gr.Textbox(label="Describe your cover art", lines=2, max_lines=4, interactive=True)
+                        cover_style = gr.Radio(["Photo", "Illustration", "Minimal", "Abstract"],
+                            value="Illustration", label="Artistic style", elem_id="coverStyle")
+                        cover_palette = gr.Textbox(label="Color palette (optional)", placeholder="e.g. turquoise, warm gold, cream")
+                        prepare_cover_btn = gr.Button("Improve my description", variant="secondary", size="sm")
+                        with gr.Accordion("Inspect / edit final prompt", open=False, elem_id="finalPromptPanel") as final_prompt_panel:
+                            final_cover_prompt = gr.Textbox(label="Final FLUX prompt (editable)", lines=4, interactive=True)
+                        prepared_cover_track = gr.State(None)
+                        cover_candidate = gr.State(None)
+                        generate_cover_btn = gr.Button("Generate new cover", variant="primary")
+                        cover_studio_status = gr.Markdown("Your audio stays unchanged.", elem_id="coverStudioStatus")
+                        with gr.Row(elem_id="coverPreviews"):
+                            with gr.Column(scale=1, min_width=0):
+                                gr.Markdown("**Current**", elem_id="currentCoverLabel")
+                                current_cover_preview = gr.Image(label="Current", show_label=False, interactive=False,
+                                    buttons=[], container=False, height=120, min_width=0, elem_id="currentCoverPreview")
+                            with gr.Column(scale=1, min_width=0):
+                                gr.Markdown("**New preview**", elem_id="newCoverLabel")
+                                new_cover_preview = gr.Image(label="New preview", show_label=False, interactive=False,
+                                    buttons=[], container=False, height=120, min_width=0, elem_id="newCoverPreview")
+                        with gr.Row(elem_id="coverActions"):
+                            accept_cover_btn = gr.Button("Use this cover", variant="primary")
+                            keep_cover_btn = gr.Button("Keep current", variant="secondary")
+                        gr.Markdown("Improve refines the prompt. Generate creates an image preview. Your audio stays unchanged.", elem_classes=["aj-status-hint"])
 
-                with gr.Tab("📚 Library"):
-                    _items, _choices = _library_views()
-                    library_gallery = gr.Gallery(value=_items, label="", columns=4, height=320, object_fit="cover")
-                    song_pick = gr.Dropdown(_choices, label="Select a song")
-                    cover_desc = gr.Textbox("", lines=4, max_lines=8, label="Cover description (edit then Retry)")
-                    with gr.Row(variant="compact"):
-                        add_queue_btn = gr.Button("➕ Add to queue", size="sm")
-                        retry_cover_btn = gr.Button("🖼️ Retry cover", size="sm")
-                        delete_song_btn = gr.Button("🗑 Delete", size="sm", variant="stop")
-                        play_all_btn = gr.Button("▶️ Play all", size="sm")
-                    lib_status = gr.Markdown("")
+        player_outputs = [queue_html, now_meta, now_cover, now_audio, skip_btn, lyrics_section, player_state]
+        def choose_song(ids, state, evt: gr.SelectData):
+            index = evt.index[0] if isinstance(evt.index, (list, tuple)) else evt.index
+            if not evt.selected or not isinstance(index, int) or index < 0 or index >= len(ids):
+                return (gr.update(),) * 9
+            sid = ids[index]
+            return (*select_for_player(sid, state), sid, gr.update(value=sid))
+        library_gallery.select(choose_song, inputs=[gallery_ids, player_state],
+            outputs=[*player_outputs, selected_song, cover_track])
+        lib_search.change(refresh_filtered_library, inputs=[lib_search], outputs=[library_gallery, gallery_ids, selected_song])
+        refresh_library_btn.click(refresh_filtered_library, inputs=[lib_search], outputs=[library_gallery, gallery_ids, selected_song])
+        add_queue_btn.click(add_to_queue, inputs=[selected_song, player_state], outputs=[queue_html, lib_status, player_state])
+        play_all_btn.click(play_all, inputs=[player_state, voice_state], outputs=player_outputs)
+        # Play/pause, seeking, speed and volume use the single native Gradio player.
+        skip_btn.click(skip, inputs=[player_state, voice_state], outputs=player_outputs)
+        now_audio.stop(advance, inputs=[player_state, voice_state], outputs=player_outputs)
 
-            # ---------------- right column: player + queue ----------------
-            with gr.Column(scale=3):
-                gr.Markdown("### 🎧 Now Playing")
-                # Toolbar buttons default to including "share", which only works
-                # on Hugging Face Spaces (throws ShareError locally). Keep
-                # download + fullscreen, drop share.
-                now_cover = gr.Image(label="", height=280, interactive=False,
-                                     buttons=["download", "fullscreen"])
-                now_status = gr.Markdown("Nothing playing — generate a song or press **Play all**.")
-                lyrics_section = gr.HTML('')
-                now_audio = gr.Audio(label="", type="filepath", interactive=False,
-                                     autoplay=False, buttons=["download"])
-                with gr.Row():
-                    play_btn = gr.Button("▶️ Play", variant="primary", size="lg")
-                    skip_btn = gr.Button("⏭️ Skip", interactive=False, size="lg")
-
-                gr.Markdown("### 📋 Queue")
-                queue_html = gr.HTML(_queue_html(INITIAL_PLAYER))
-
-                gr.Markdown("### 🎙️ DJ Voice")
-                voice_upload = gr.Audio(type="filepath", label="Custom DJ voice (optional MP3/WAV)", sources=["upload"])
-                voice_status = gr.Markdown("Using the default bundled DJ voice.")
-                remove_voice_btn = gr.Button("Remove custom voice", interactive=False)
-
-        # Refresh from the current library on every page load, not the startup snapshot.
-        def refresh_library():
-            items, choices = _library_views()
-            return gr.update(value=items, selected_index=None), gr.update(choices=choices, value=None)
-
-        demo.load(refresh_library, outputs=[library_gallery, song_pick])
-
-        # ---------------- events ----------------
-        gen_btn.click(
-            generate_song,
+        def refresh_cover_choices():
+            return gr.update(choices=[(s.display_label(), s.id) for s in LIBRARY.all()])
+        cover_track.change(select_cover_track, inputs=[cover_track],
+            outputs=[cover_description, current_cover_preview, new_cover_preview,
+                     final_cover_prompt, prepared_cover_track, cover_candidate, cover_studio_status])
+        demo.load(initialize_session,
+            outputs=[library_gallery, gallery_ids, cover_track, selected_song,
+                     *player_outputs, cover_description, current_cover_preview,
+                     new_cover_preview, final_cover_prompt, prepared_cover_track,
+                     cover_candidate, cover_studio_status])
+        prepare_cover_btn.click(prepare_cover_brief,
+            inputs=[cover_track, cover_description, cover_style, cover_palette],
+            outputs=[final_cover_prompt, prepared_cover_track, cover_studio_status, cover_candidate, new_cover_preview]).then(
+                lambda: gr.update(open=True), outputs=[final_prompt_panel])
+        rendered = generate_cover_btn.click(
+            lambda: gr.update(interactive=False), outputs=[keep_cover_btn], queue=False).then(
+            render_cover_candidate,
+            inputs=[cover_track, prepared_cover_track, final_cover_prompt],
+            outputs=[new_cover_preview, cover_candidate, cover_studio_status])
+        rendered.then(lambda: gr.update(interactive=True), outputs=[keep_cover_btn], queue=False)
+        rendered.then(
+            lambda candidate: gr.update(open=not bool(candidate)), inputs=[cover_candidate], outputs=[final_prompt_panel])
+        for source in (cover_description, cover_style, cover_palette):
+            source.change(lambda: None, outputs=[prepared_cover_track])
+        accepted = accept_cover_btn.click(accept_cover_candidate, inputs=[cover_track, cover_candidate],
+            outputs=[current_cover_preview, new_cover_preview, cover_candidate, cover_studio_status, song_list_html])
+        accepted.then(refresh_filtered_library, inputs=[lib_search], outputs=[library_gallery, gallery_ids, selected_song])
+        def refresh_player_art(state):
+            queue = state.get("queue", [])
+            pos = state.get("pos", 0)
+            song = LIBRARY.get(queue[pos]) if 0 <= pos < len(queue) else None
+            return gr.update(value=_cover_for_song(song)) if song else gr.update()
+        accepted.then(refresh_player_art, inputs=[player_state], outputs=[now_cover])
+        keep_cover_btn.click(keep_current_cover, outputs=[new_cover_preview, cover_candidate, cover_studio_status])
+        generated = gen_btn.click(generate_song,
             inputs=[created_by, style, mood, duration, instrumental, theme],
-            outputs=[gen_btn, gen_status, gen_result, library_gallery, song_pick],
-        )
-        add_queue_btn.click(
-            add_to_queue,
-            inputs=[song_pick, player_state],
-            outputs=[queue_html, lib_status, player_state],
-        )
-        play_all_btn.click(
-            play_all,
-            inputs=[player_state, voice_state],
-            outputs=[queue_html, now_status, now_cover, now_audio, skip_btn, lyrics_section, player_state],
-        )
-        play_btn.click(
-            play,
-            inputs=[player_state, voice_state],
-            outputs=[queue_html, now_status, now_cover, now_audio, skip_btn, lyrics_section, player_state],
-        )
-        skip_btn.click(
-            skip,
-            inputs=[player_state, voice_state],
-            outputs=[queue_html, now_status, now_cover, now_audio, skip_btn, lyrics_section, player_state],
-        )
-        # Gradio 6.30 exposes the audio "end" event as `stop`: the player's DOM
-        # `ended` event (natural playback finish) is wired to the component's
-        # `stop` handler; `pause` is only the user-pause event. Skipping the
-        # current track also routes through `advance()` via the Skip button.
-        now_audio.stop(
-            advance,
-            inputs=[player_state, voice_state],
-            outputs=[queue_html, now_status, now_cover, now_audio, skip_btn, lyrics_section, player_state],
-        )
-        # When a library song is selected, load its saved cover prompt into the editor.
-        def on_song_select(song_id: str, state: dict):
-            song = LIBRARY.get(song_id) if song_id else None
-            return (song.cover_prompt or "" if song else "", *select_for_player(song_id, state))
-
-        song_pick.change(
-            on_song_select,
-            inputs=[song_pick, player_state],
-            outputs=[cover_desc, queue_html, now_status, now_cover, now_audio, skip_btn, lyrics_section, player_state],
-        )
-
-        def on_gallery_select(evt: gr.SelectData):
-            songs = LIBRARY.all()
-            idx = evt.index
-            if isinstance(idx, int) and 0 <= idx < len(songs):
-                return songs[idx].id
-            return gr.update()
-
-        library_gallery.select(on_gallery_select, outputs=[song_pick])
-        retry_cover_btn.click(
-            retry_cover,
-            inputs=[song_pick, player_state, cover_desc],
-            outputs=[library_gallery, lib_status, queue_html, now_cover],
-        )
-        delete_song_btn.click(
-            delete_song,
-            inputs=[song_pick, player_state],
-            outputs=[lib_status, song_pick, library_gallery, queue_html],
-        )
-        voice_upload.change(
-            on_voice_upload,
-            inputs=[voice_upload, voice_state],
-            outputs=[voice_status, remove_voice_btn, voice_upload, voice_state],
-        )
-        remove_voice_btn.click(
-            on_voice_remove,
-            inputs=[voice_state],
-            outputs=[voice_status, remove_voice_btn, voice_upload, voice_state],
-        )
-
+            outputs=[gen_btn, gen_status, gen_result, library_gallery, cover_track])
+        generated.then(refresh_filtered_library, inputs=[lib_search], outputs=[library_gallery, gallery_ids, selected_song])
+        generated.then(refresh_cover_choices, outputs=[cover_track])
+        def delete_selected(sid, state):
+            message, _, _, _ = delete_song(sid, state)
+            state = _player_state(state)
+            state["queue"] = [item for item in state["queue"] if LIBRARY.get(item)]
+            state["pos"] = min(state["pos"], max(0, len(state["queue"]) - 1))
+            if not state["queue"]:
+                state["mode"] = "idle"
+            return message, sid if LIBRARY.get(sid) else None, _queue_html(state), state
+        deleted = delete_song_btn.click(delete_selected, inputs=[selected_song, player_state],
+            outputs=[lib_status, selected_song, queue_html, player_state])
+        deleted.then(refresh_filtered_library, inputs=[lib_search], outputs=[library_gallery, gallery_ids, selected_song])
+        deleted.then(refresh_cover_choices, outputs=[cover_track])
+        voice_upload.change(on_voice_upload, inputs=[voice_upload, voice_state],
+            outputs=[voice_status, remove_voice_btn, voice_upload, voice_state])
+        remove_voice_btn.click(on_voice_remove, inputs=[voice_state],
+            outputs=[voice_status, remove_voice_btn, voice_upload, voice_state])
     return demo
 
 
@@ -765,7 +927,7 @@ if __name__ == "__main__":
         # Cover art lives under data/covers; registering it here lets the
         # /gradio_api/file= URLs used by queue/gallery thumbnails always be
         # served, regardless of the working directory the app was launched from.
-        allowed_paths=[str(config.DATA_DIR)],
+        allowed_paths=[str(config.DATA_DIR), str(Path(__file__).parent / "jukebox")],
         theme=gr.themes.Soft(
             primary_hue="violet",
             secondary_hue="indigo",
@@ -773,5 +935,6 @@ if __name__ == "__main__":
             font=gr.themes.GoogleFont("Inter"),
         ),
         css=CUSTOM_CSS + "footer {display: none !important;} ",
-        js=THEME_JS,
+        # --- Global JS via head (executes before SPA hydration) ---
+        head='<style>' + (Path(__file__).parent / 'jukebox' / 'workspace.css').read_text(encoding='utf-8') + '</style><script>' + _JUKEBOX_JS + '</script>',
     )
