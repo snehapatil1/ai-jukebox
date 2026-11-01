@@ -19,8 +19,11 @@ the repeatable checks):
   small `max_tokens` (e.g. 160) can be fully consumed by internal reasoning
   (`finish=length`, `content=None`); chains measured up to 8k+ tokens, so
   "empty" replies were reproducible. Fix verified: `chat_template_kwargs:
-  {"enable_thinking": False}` → reliable answers in ~0.2–1 s, still
-  `temperature: 0`. A `max_tokens >= 1024` guard is enforced in the client.
+  {"enable_thinking": False}` → reliable answers in ~0.2–1 s. Creative calls
+  (title, lyrics, cover prompt) now sample at `temperature 0.9`
+  (`config.CREATIVE_TEMPERATURE`) — 0.0 made same-settings generations
+  near-deterministic (identical titles/lyrics). A `max_tokens >= 1024` guard is
+  enforced in the client.
 - **9006 FLUX**: `POST /v1/images/generations` → `data[0].b64_json` PNG
   (1024×1024). Output visually confirmed (red apple probe).
 - **9007 ACE-Step**: async task API per its docs — `POST /release_task`

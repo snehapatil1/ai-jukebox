@@ -6,6 +6,7 @@ calls out to any paid or third-party service.
 from __future__ import annotations
 
 import logging
+import re
 import threading
 from pathlib import Path
 
@@ -29,32 +30,87 @@ def _clean_title(raw: str) -> str:
     return raw[:60]
 
 
+def _norm_title(t: str) -> str:
+    """Lowercased, punctuation-stripped title for duplicate/near-duplicate check."""
+    return re.sub(r"[^a-z0-9 ]", "", (t or "").lower()).strip()
+
+
+def _title_used(title: str, existing_titles) -> bool:
+    """True if *title* equals or near-repeats an existing title (same normalized
+    text, contained in one another, or sharing the first 12 characters — e.g.
+    'Sunlight Spills On The Pavement' vs 'Sunlight Spilled on Lemonade')."""
+    n = _norm_title(title)
+    if not n:
+        return False
+    for other in existing_titles:
+        m = _norm_title(other)
+        if m and (m == n or n in m or m in n or n[:12] == m[:12]):
+            return True
+    return False
+
+
 def write_song_draft(
-    style: str, mood: str, duration_sec: float, instrumental: bool, theme: str
+    style: str, mood: str, duration_sec: float, instrumental: bool, theme: str,
+    *,
+    existing_titles: tuple[str, ...] = (),
 ) -> dict:
     """Return {"title": str, "lyrics": str}. Lyrics is "" for instrumentals."""
     theme = (theme or "").strip()
     duration_sec = max(config.DURATION_MIN, min(float(duration_sec), config.DURATION_MAX))
 
     kind = "instrumental" if instrumental else "vocal"
+    avoid = ""
+    if existing_titles:
+        avoid = ("Do NOT reuse or near-repeat any of these existing titles: "
+                 + ", ".join(existing_titles[:20]) + ".\n")
+    title_user = prompts.TITLE_USER.format(style=style, mood=mood,
+                                           theme=theme or "none", kind=kind, avoid=avoid)
     title = clients.qwen_chat_with_fallback(
-        prompts.TITLE_SYSTEM,
-        prompts.TITLE_USER.format(style=style, mood=mood, theme=theme or "none", kind=kind),
-        max_tokens=2048,
+        prompts.TITLE_SYSTEM, title_user, max_tokens=2048,
+        temperature=config.CREATIVE_TEMPERATURE,
         fallback_truncations=(60,),
     )
     title = _clean_title(title)
+    # If a duplicate still slips through, push back once.
+    if title and _title_used(title, existing_titles):
+        retry = _clean_title(clients.qwen_chat_with_fallback(
+            prompts.TITLE_SYSTEM,
+            title_user + "\nYour previous suggestion was already used in this library. "
+                         "Pick a completely different title.",
+            max_tokens=2048, temperature=config.CREATIVE_TEMPERATURE,
+            fallback_truncations=(60,),
+        ))
+        if retry and not _title_used(retry, existing_titles):
+            title = retry
     if not title:
         raise PipelineError("Could not write a song title — please try again.")
     if instrumental:
         return {"title": title, "lyrics": ""}
 
-    words = max(24, int(duration_sec * 2.2))  # ~2.2 sung words per second
+    # Duration-aware budget: ACE-Step sings what fits the duration, so short
+    # songs get a small per-second budget and few sections (a full
+    # [Intro]/[Verse 1]/[Chorus]/[Verse 2]/[Bridge]/[Outro] structure simply
+    # does not get sung in 10-20 s — only the first lines do).
+    if duration_sec <= 20:
+        ratio, words = 1.3, max(10, int(duration_sec * 1.3))
+        sections = ("For short songs use ONLY [Verse 1], plus a brief [Chorus] if it fits. "
+                    "NO [Intro], [Verse 2], [Bridge], or [Outro] — they will not be sung.")
+    elif duration_sec <= 45:
+        ratio, words = 1.4, max(14, int(duration_sec * 1.4))
+        sections = ("Use [Verse 1], [Chorus], and end with the SAME [Chorus] written out "
+                    "verbatim again (a chorus must appear twice; the repeat closes the song). "
+                    "No [Intro], [Verse 2], [Bridge], or [Outro].")
+    else:
+        ratio, words = 1.6, max(24, int(duration_sec * 1.6))
+        sections = ("Use [Verse 1], [Chorus], [Verse 2], the SAME [Chorus] verbatim once more, "
+                    "and a short [Outro]. Skip [Intro] and [Bridge].")
     lyrics = clients.qwen_chat_with_fallback(
-        prompts.LYRICS_SYSTEM.format(dur=int(duration_sec), words=words),
+        prompts.LYRICS_SYSTEM.format(dur=int(duration_sec), words=words,
+                                     sections=sections, ratio=ratio),
         prompts.LYRICS_USER.format(style=style, mood=mood, theme=theme or "none",
                                    dur=int(duration_sec)),
         max_tokens=2048,
+        temperature=config.CREATIVE_TEMPERATURE,
     )
     if not lyrics:
         raise PipelineError("Could not write lyrics — please try again.")
@@ -71,9 +127,38 @@ def compose_music(
 ) -> tuple[Path, dict]:
     """Generate the audio file. Returns (absolute path, service metadata)."""
     theme = (theme or "").strip()
-    prompt = f"{style}, {mood} mood"
+    # Build a detailed prompt for ACE-Step with instrumentation and production cues.
+    style_desc = {
+        "rock": "electric guitars, driving drums, bass line",
+        "pop": "clean production, catchy melody, polished synths",
+        "hip hop": "808 bass, crisp snares, rhythmic beats",
+        "jazz": "saxophone or piano, upright bass, brushed drums",
+        "ambient": "atmospheric pads, reverb-drenched textures, slow evolving harmonies",
+        "metal": "distorted guitars, double-kick drums, aggressive tone",
+        "electronic": "synthesizers, drum machines, electronic textures",
+        "folk": "acoustic guitar, fiddle, warm organic feel",
+        "classical": "string quartet or orchestra, dynamic swells",
+        "r&b": "smooth bass groove, soulful keys, tight rhythm section",
+        "country": "twangy guitars, pedal steel, storytelling feel",
+    }.get(style.lower(), f"{style} instrumentation")
+    
+    mood_desc = {
+        "happy": "uplifting major key, bright energy",
+        "sad": "minor key, emotional depth, melancholic tones",
+        "dark": "dminishing harmonies, tense atmosphere, brooding mood",
+        "energetic": "fast tempo, driving rhythm, intense dynamics",
+        "calm": "slow tempo, gentle dynamics, peaceful mood",
+        "dreamy": "ethereal textures, floating harmonies, reverberant space",
+        "aggressive": "hard-hitting rhythms, sharp attacks, intense delivery",
+        "romantic": "warm harmonies, intimate feel, lyrical melodies",
+        "nostalgic": "vintage warmth, bittersweet tonality, retro character",
+        "epic": "grand crescendos, wide dynamic range, cinematic sweep",
+    }.get(mood.lower(), f"{mood} atmosphere")
+    
+    parts = [f"{style_desc}, {mood_desc}"]
     if theme:
-        prompt += f", theme: {theme}"
+        parts.append(f"theme: {theme}")
+    prompt = ", ".join(parts)
     audio_bytes, meta = clients.generate_music(
         prompt=prompt, lyrics=lyrics, duration_sec=duration_sec
     )
@@ -85,20 +170,61 @@ def compose_music(
 # ---------------------------------------------------------------------------
 # 3. Cover art (FLUX, port 9006) — prompt by Qwen
 # ---------------------------------------------------------------------------
-def cover_prompt_for(song: Song) -> str:
-    """Qwen writes a FLUX-safe prompt for this song's cover."""
-    first_lyric_line = ""
+
+# Keywords that mark structurally important lyric lines (verses/chorus/refrain).
+_IMPORTANT_LINE_RE = re.compile(r"^(?:verse|chorus|refrain|bridge|harp|guitar|\[intro\]|\[outro\]|\[instrumental\]).*:", re.IGNORECASE)
+
+
+def _select_key_lines(lyrics: str, count: int = 6) -> list[str]:
+    """Pick up to *count* lyric lines that carry the song's imagery/mood."""
+    lines = [l.strip() for l in lyrics.splitlines() if l.strip()]
+    scored: list[tuple[float, str]] = []
+    section_idx = 0
+    for line in lines:
+        score = 0.0
+        # Lines right after section headers get priority
+        if _IMPORTANT_LINE_RE.match(line):
+            score = 10.0 + section_idx * 0.5
+            section_idx += 1
+        # Short, vivid lines are good lyrical content
+        elif 5 <= len(line) <= 120 and not any(
+            tag in line.lower() for tag in ("[intro]", "[outro]", "[end]")
+        ):
+            score = 1.0
+        scored.append((score, line))
+    scored.sort(key=lambda t: t[0], reverse=True)
+    return [line for _, line in scored[:count]]
+
+
+def cover_prompt_for(song: Song, *, custom_prompt: str | None = None) -> str:
+    """Qwen writes a FLUX-safe prompt for this song's cover.
+
+    If *custom_prompt* is given, the user has already written/edited the
+    description and we skip Qwen entirely, returning it verbatim.
+    """
+    if custom_prompt and custom_prompt.strip():
+        return custom_prompt.strip()
+
+    # Build the user-side prompt with selected lyric excerpts.
+    theme_or_none = (song.theme or "none").strip()
+    lyrics_section = prompts.LYRICS_SECTION_EMPTY
     if song.lyrics:
-        for line in song.lyrics.splitlines():
-            stripped = line.strip().lstrip("*#[]-")
-            if stripped:
-                first_lyric_line = stripped[:90]
-                break
-    user = prompts.COVER_USER.format(
-        title=song.title, style=song.style, mood=song.mood,
-        theme=song.theme or "none", lyric_line=first_lyric_line,
+        key_lines = _select_key_lines(song.lyrics, count=6)
+        if key_lines:
+            lyrics_text = "\n".join(key_lines)
+            lyrics_section = prompts.LYRICS_SECTION_FULL.format(
+                lyrics_important_lines=lyrics_text
+            )
+
+    user = prompts.COVER_USER_TEMPLATE.format(
+        title=song.title,
+        style=song.style,
+        mood=song.mood,
+        theme_or_none=theme_or_none,
+        lyrics_section=lyrics_section,
     )
-    text = clients.qwen_chat_with_fallback(prompts.COVER_SYSTEM, user, max_tokens=1024)
+    text = clients.qwen_chat_with_fallback(prompts.COVER_SYSTEM, user, max_tokens=1024,
+                                           temperature=config.CREATIVE_TEMPERATURE)
     if not text:
         raise PipelineError("Could not write a cover prompt — please try again.")
     # strip wrapping quotes the model sometimes adds
@@ -107,12 +233,13 @@ def cover_prompt_for(song: Song) -> str:
     return text.strip()
 
 
-def generate_cover(song: Song) -> Path:
-    """Generate cover PNG for the song, store it, return the absolute path."""
-    png = clients.generate_image(cover_prompt_for(song))
+def generate_cover(song: Song, *, custom_prompt: str | None = None) -> tuple[Path, str]:
+    """Generate cover PNG for the song. Returns (absolute_path, prompt_used)."""
+    prompt = cover_prompt_for(song, custom_prompt=custom_prompt)
+    png = clients.generate_image(prompt)
     out = config.COVER_DIR / clients.new_filename(".png")
     out.write_bytes(png)
-    return out
+    return out, prompt
 
 
 def placeholder_cover() -> Path:
