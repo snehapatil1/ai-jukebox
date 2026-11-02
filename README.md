@@ -100,6 +100,43 @@ copied — voice references, DJ clips, and everything else in `data/` are
 never touched. Re-running it for the same song replaces the existing entry
 in place. Commit `samples/` afterwards so the sample ships in the ZIP.
 
+## How the sample songs were made
+
+Each sample was generated through the app itself — the Create tab ran the
+same pipeline any user song runs, using only the class AI services: **Qwen
+(port 9001)** wrote the title and lyrics, **ACE-Step (port 9007)** composed
+the audio, and **FLUX (port 9006)** produced the cover art.
+
+### Sample 1 — "Calloused Fingers Break The Silence" (id `b206632d8cc0`)
+
+- **Genre (custom text):** "epic hard rock, huge distorted guitar riffs,
+  thundering live drums, driving bassline, powerful raw male vocals,
+  anthemic build"
+- **Mood:** Epic — **vocal** — **duration:** 100 s
+- **Theme (as entered in the Create tab):**
+
+> genre: epic hard rock, huge distorted guitar riffs, thundering live
+> drums, driving bassline, powerful raw male vocals, anthemic build.
+> theme: Keeping music human. A singer's voice cracking on the high note
+> because she means it; a kid practicing the same chords every night for
+> years; a crowd screaming the chorus back. Real people, real voices, real
+> passion. Is losing that really progress? Starts heavy and doubtful, ends
+> huge and defiant. Never mention algorithms, computers, AI, or machines.
+
+- **Selection process:** about 20 generations were run for this track; the
+  best-sounding take was kept. The AI-generated title was kept as is.
+- **Cover:** regenerated afterwards in the Cover Art Studio — **Abstract**
+  style, description *"Abstract art showing the feeling of loss and
+  confusion but still unsettled and defiant."*, palette *"contrast between
+  dark blues and orangey reds"*. The final FLUX prompt is stored in
+  `samples.json` (`cover_prompt`).
+- **Assets:** `samples/audio/b206632d8cc0.mp3`, `samples/covers/b206632d8cc0.png`
+
+### Samples 2 and 3 — pending
+
+Two more sample songs are planned to reach the required three; each will get
+the same block here when added.
+
 ## Class services used
 
 | Port | Service | Job in this app |
