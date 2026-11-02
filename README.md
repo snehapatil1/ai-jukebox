@@ -12,6 +12,17 @@ services: song generation, cover art (with placeholder + retry), AI DJ
 song → DJ clip → song, skip, persistence across restarts). See `PROGRESS.md`
 for the full step log and test evidence.
 
+## Status
+
+Core features tested manually through the live Gradio app on macOS with a
+real browser (Chrome). Song generation, cover art, AI DJ, and fresh download
+tests each have their own result table below. The automated test suite (40 tests)
+also passed today. Three browser-based validation scripts are listed from PR
+#10 results; they were **not rerun** in this session.
+Two sample songs still need to be added before the final release. Known
+limitations are listed under "Unresolved issues" and "Limitations investigated"
+below.
+
 ## Features
 
 1. **Custom song generation** — pick a style, mood, duration (10–120 s slider,
@@ -41,6 +52,27 @@ for the full step log and test evidence.
    **Skip** (works during both a song and DJ speech), a visible queue with a
    now-playing indicator, "add to queue" for any library song, and **Play all**.
    The library persists across server restarts (`data/library.json`).
+
+## How to use
+
+### Song generation
+1. Open the app at http://127.0.0.1:7860 and go to the **Create** tab.
+2. Optionally enter an artist name. Pick a genre (or type your own) and a mood, set the duration (10–120 s), and leave **Instrumental** unchecked for a vocal song.
+3. Optionally describe a theme in **Theme / Story**.
+4. Click **Generate Song**. The status box shows each stage (writing lyrics, generating the song, creating cover art) with a timer.
+5. The finished song is added to the **Library** with its title, cover, and lyrics.
+
+### Cover art
+1. Go to the **Library** tab. In the **Cover art studio**, choose the song under **Editing cover for**.
+2. Describe the cover you want, pick a style (Photo, Illustration, Minimal, Abstract), and optionally a color palette.
+3. Click **Improve my description** to have Qwen refine the prompt, then **Generate new cover** to preview a new FLUX image.
+4. Click **Use this cover** to save it to the song, or **Keep current** to discard it. The audio is never changed.
+
+### AI DJ
+1. Make sure the library has at least two songs (the shipped sample counts).
+2. Check that **DJ between songs** is on under **DJ options** in the Library tab (it's on by default).
+3. Click **Play all** once. Songs play in order, and between songs the DJ speaks about the song that just ended and the next one, then the next song starts automatically. **Next track** skips ahead.
+4. Optional: to give the DJ a different voice, open **DJ voice settings** at the bottom of the Create tab and upload a 3–60 second MP3 or WAV of clear speech.
 
 ## Requirements
 
@@ -209,7 +241,92 @@ test harness; manual tests were run through the live Gradio app.
 
 ::preview{file="/Users/MaddieSavary2/Documents/MBAX 6418/Assignment #3/dj-test-table.html"}
 
+## Test Results (Song Generation)
+
+Tests performed manually through the live Gradio app on macOS with a real
+browser (Chrome), connected to live class services (ports 9001 and 9007).
+
+| Input | Expected | Actual | Status |
+| --- | --- | --- | --- |
+| Vocal song, 10 s duration | Generated track with some singing | Generated, but no audible singing — output is instrumental only | Known issue |
+| Vocal song, 35 s duration | Generated track with clear singing | Singing audible, sounded right | Pass |
+| Vocal song, 100 s duration | Full lyrics sung end to end | Generated with singing; lyrics shown in the app. Not checked whether every lyric line was sung. | Pass (partial) |
+| Instrumental song | Music with no vocals | Generated and played with no vocals | Pass |
+
+## Test Results (Cover Art)
+
+Tests performed manually through the Cover Art Studio in the live Gradio app
+on macOS with Chrome, connected to FLUX (port 9006).
+
+| Input | Expected | Actual | Status |
+| --- | --- | --- | --- |
+| Regenerated sample cover in Cover Art Studio, Abstract style, custom description and palette | Accept artwork and display it on the track | Accepted; cover shown on track in both Library and player | Pass |
+
+## Test Results (Fresh Download)
+
+| Input | Expected | Actual | Status |
+| --- | --- | --- | --- |
+| Clone repo from GitHub, start `python app.py` | Sample songs appear in library automatically | "Calloused Fingers Break The Silence" appeared in the library automatically with its cover | Pass |
+
+Tested on a fresh clone in a separate environment; a teammate install from the
+GitHub ZIP is still to be done.
+
+### Test evidence (unit tests)
+
+The following unit tests passed in this session: 40 automated tests ran via
+`python -m pytest tests`. They run offline and don't call the class services.
+`scripts/smoke_test.py` (live services) was not run in this session.
+
+The following browser-based validation scripts were reported as passing in PR
+#10 and were **not rerun** in this session: `check_polished_ui.py`,
+`check_cover_studio_browser.py`, `check_library_ui_browser.py`.
+
+### Unresolved issues
+
+These were observed but not yet fixed:
+
+- Choosing an **.m4a voice file** does nothing — no error message, no file
+  shown, no upload. Gradio's upload component ignores the file before the app
+  receives it, so no error is shown. Workaround: use MP3 or WAV.
+- **10 s vocal songs may have no singing.** ACE-Step cannot fit a full vocal
+  into such a short window; the output is instrumental-only even when "vocal"
+  is selected. Users should request ≥30 s for clear vocals. Observed by
+  comparison with 35 s and 100 s tracks.
+- **Autoplay fix tested on Chrome/macOS only.** After the first real Play
+  click, subsequent queue items play automatically. Not tested on Firefox,
+  Safari, or iOS. **not verified**.
+
+### Design judgment
+
+**Prefetching DJ clips while the current song plays, rather than generating
+them on demand, avoids silence between tracks.** A single DJ clip takes
+approximately **4.6 seconds** to generate end-to-end (measured via timing
+the Qwen + Chatterbox pipeline during live testing). If we generated the
+commentary only when a song ended, listeners would hear a noticeable gap
+between songs. Prefetching in a background thread keeps the transition
+seamless and costs no additional time overall because generation happens in
+parallel with playback.
+
+### Limitations investigated
+
+I generated about 20 versions of my sample song ("Calloused Fingers Break The Silence") through the app.
+- Sound and lyrics didn't line up: the best-sounding take had lyrics that didn't always make sense, so I chose it based on sound.
+- Longer, more detailed themes (with extra instructions about style and wording) often made results worse, not better. Shorter, concrete themes worked better.
+- Every generation is random, so generating several takes and picking the best one worked better than repeatedly rewriting the prompt.
+
+## Screenshots
+
+**Song generation** (Create tab)
+![Song generation](screenshots/song-generation.png)
+
+**Library view** with a generated track
+![Library](screenshots/library.png)
+
+**AI DJ commentary** playing between songs
 ![DJ commentary](screenshots/dj-commentary.png)
+
+**DJ voice settings** — custom MP3 or WAV upload
+![DJ custom voice](screenshots/dj-custom-voice.png)
 
 ## Limitations
 
