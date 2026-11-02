@@ -776,7 +776,7 @@ def build_app() -> gr.Blocks:
                     with gr.Row():
                         style = gr.Dropdown(GENRES, value="Pop", allow_custom_value=True, label="Genre")
                         mood = gr.Dropdown(MOODS, value="Happy", label="Mood")
-                    duration = gr.Slider(config.DURATION_MIN, 60, value=config.DURATION_DEFAULT, step=5, label="Duration (seconds)")
+                    duration = gr.Slider(config.DURATION_MIN, config.DURATION_MAX, value=config.DURATION_DEFAULT, step=5, label="Duration (seconds)")
                     instrumental = gr.Checkbox(False, label="Instrumental (no lyrics)")
                     theme = gr.Textbox("", label="Theme / Story", lines=3, placeholder="What is your song about?")
                     gen_btn = gr.Button("Generate Song", variant="primary")

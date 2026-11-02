@@ -14,7 +14,7 @@ for the full step log and test evidence.
 
 ## Features
 
-1. **Custom song generation** — pick a style, mood, duration (10–60 s slider,
+1. **Custom song generation** — pick a style, mood, duration (10–120 s slider,
    enforced 10–120 s in code), instrumental or vocal, and an optional theme.
    Qwen writes the title (and original lyrics for vocal tracks, shown in the
    UI), ACE-Step composes the audio, and the song lands in the library
