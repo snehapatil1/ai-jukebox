@@ -54,7 +54,7 @@
     var wrapper = root.querySelector('.wrapper');
     if (!wrapper || !root.querySelector('.canvases')) return;
     var width = host.getBoundingClientRect().width;
-    var sourceWidth = wrapper.style.width.endsWith('px') ? parseFloat(wrapper.style.width) : width;
+    var sourceWidth = width;
     if (!width || !sourceWidth) return;
     host.style.setProperty('--aj-wave-source-width', sourceWidth + 'px');
     host.style.setProperty('--aj-wave-scale', String(width / sourceWidth));
