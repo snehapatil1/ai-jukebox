@@ -308,16 +308,8 @@ def speak(
     voice_id: str | None = None,
     language_id: str = "en",
     response_format: str = "mp3",
-    speed: float = 1.0,
-    exaggeration: float = 0.0,
 ) -> bytes:
-    """Synthesize speech. Default bundled voice unless a voice/ref is given.
-
-    ``speed`` (server range 0.25-4.0) and ``exaggeration`` (>= 0) are
-    Chatterbox speech parameters; DJ characters pass their per-character
-    values through these. ``voice_id`` is never set by the app — only the
-    bundled default voice or the user's ``ref_audio`` clone is used.
-    """
+    """Synthesize speech. Default bundled voice unless a voice/ref is given."""
     text = text.strip()
     if not text:
         raise ServiceError("speak() called with empty text")
@@ -328,8 +320,7 @@ def speak(
         "input": text,
         "language_id": language_id,
         "response_format": response_format,
-        "speed": float(speed),
-        "exaggeration": float(exaggeration),
+        "speed": 1.0,
     }
     if voice_id:
         body["voice"] = voice_id

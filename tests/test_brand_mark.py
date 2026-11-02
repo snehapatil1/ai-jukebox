@@ -12,21 +12,24 @@ class BrandMarkTests(unittest.TestCase):
         self.assertNotIn('▂▆█▅▂',header)
         self.assertLess(header.index('class="aj-logo"'),header.index('id="mainTitle"'))
 
-    def test_dj_options_offer_the_character_picker(self):
+    def test_dj_options_offer_the_on_off_toggle(self):
         demo = app.build_app()
         components = demo.config['components']
-        self.assertTrue(any(c['props'].get('elem_id') == 'djOptionsPanel' for c in components))
         markdown_values = [c['props'].get('value', '') for c in components if c['type'] == 'markdown']
-        self.assertTrue(any('DJ options' in v for v in markdown_values))
+        self.assertTrue(any('### DJ options' in v for v in markdown_values))
         self.assertFalse(any('Coming soon.' in v for v in markdown_values),
-                         'The coming-soon placeholder must be replaced by the real picker')
-        radios = [c for c in components if c['type'] == 'radio' and c['props'].get('label') == 'DJ character']
-        self.assertEqual(len(radios), 1)
-        choices = radios[0]['props']['choices']
-        self.assertEqual([c[0] for c in choices],
-                         ['Off', 'Classic radio', 'Late-night chill', 'Party hype'])
-        self.assertEqual(radios[0]['props']['value'], 'classic')
-        hint = next(v for v in markdown_values if 'each character changes personality' in v)
-        self.assertIn('Upload a custom voice in the Create tab.', hint)
+                         'The coming-soon placeholder must be replaced by the real control')
+        checkboxes = [c for c in components
+                      if c['type'] == 'checkbox' and 'DJ between songs' in c['props'].get('label', '')]
+        self.assertEqual(len(checkboxes), 1)
+        self.assertTrue(checkboxes[0]['props'].get('value', False),
+                        'The DJ toggle must be ON by default')
+        hint = next(v for v in markdown_values if 'Want the DJ to sound like you?' in v)
+        self.assertIn('Upload a custom voice (MP3 or WAV) in the Create tab.', hint)
+        # The character picker is gone, and so is the placeholder panel box.
+        radios = [c for c in components
+                  if c['type'] == 'radio' and 'DJ character' in c['props'].get('label', '')]
+        self.assertEqual(radios, [])
+        self.assertFalse(any(c['props'].get('elem_id') == 'djOptionsPanel' for c in components))
 
 if __name__=='__main__': unittest.main()

@@ -25,7 +25,7 @@ from urllib.parse import quote, unquote
 
 import gradio as gr
 
-from jukebox import clients, config, prompts, service
+from jukebox import clients, config, service
 from jukebox.library import Song, SongLibrary
 
 config.setup_logging()
@@ -191,14 +191,14 @@ def _now_status(song: Song, mode: str) -> str:
     return f"{state} {song.title} — {song.style} · {song.mood} ({kind})"
 
 
-def _spawn_prefetch(state: dict, song: Song, voice_state: dict, character: str) -> None:
-    if character == "off":
+def _spawn_prefetch(state: dict, song: Song, voice_state: dict, dj_enabled: bool) -> None:
+    if not dj_enabled:
         return
     nxt_i = state["pos"] + 1
     if nxt_i < len(state["queue"]):
         nxt = LIBRARY.get(state["queue"][nxt_i])
         if nxt is not None:
-            service.prefetch_dj_clip(song, nxt, _voice_fp(voice_state), _voice_ref(voice_state), character)
+            service.prefetch_dj_clip(song, nxt, _voice_fp(voice_state), _voice_ref(voice_state))
 
 
 # ---------------------------------------------------------------------------
@@ -251,13 +251,13 @@ def _audio_value(path: Path, autoplay: bool):
     return gr.update(value=str(src), autoplay=autoplay)
 
 
-def _start_song(state: dict, idx: int, voice_state: dict, character: str) -> tuple:
+def _start_song(state: dict, idx: int, voice_state: dict, dj_enabled: bool) -> tuple:
     state["pos"], state["mode"] = idx, "song"
     song = LIBRARY.get(state["queue"][idx])
     if song is None:
         state["mode"] = "idle"
         return _queue_html(state), "That song is no longer in the library.", gr.update(), gr.update(value=None), gr.update(interactive=False), '', state
-    _spawn_prefetch(state, song, voice_state, character)
+    _spawn_prefetch(state, song, voice_state, dj_enabled)
     lyrics_section = _lyrics_section(song.lyrics)
     status = f'**Now playing:** {html.escape(song.title)} — {html.escape(song.style)} · {html.escape(song.mood)}{lyrics_section}'
     credit = f" · by {html.escape(song.created_by)}" if song.created_by.strip() else ""
@@ -273,11 +273,11 @@ def _start_song(state: dict, idx: int, voice_state: dict, character: str) -> tup
     )
 
 
-def advance(player_state: dict, voice_state: dict, character: str) -> tuple:
+def advance(player_state: dict, voice_state: dict, dj_enabled: bool) -> tuple:
     """Called by the player's `end` event and by Skip.
 
     song -> DJ clip -> next song -> ... ; state machine lives in gr.State.
-    With the character set to "off", songs play back to back with no DJ
+    With "DJ between songs" off, songs play back to back with no DJ
     commentary and no DJ prefetch.
     """
     state = _player_state(player_state)
@@ -299,15 +299,15 @@ def advance(player_state: dict, voice_state: dict, character: str) -> tuple:
             )
         prev, nxt = LIBRARY.get(state["queue"][state["pos"]]), LIBRARY.get(state["queue"][nxt_i])
         if prev is None or nxt is None:
-            return _start_song(state, nxt_i, voice_state, character)
-        if character == "off":
-            # No DJ: songs play back to back.
-            return _start_song(state, nxt_i, voice_state, character)
-        clip, text, reason = service.wait_dj_clip(prev, nxt, _voice_fp(voice_state), _voice_ref(voice_state), character)
+            return _start_song(state, nxt_i, voice_state, dj_enabled)
+        if not dj_enabled:
+            # DJ off: songs play back to back.
+            return _start_song(state, nxt_i, voice_state, dj_enabled)
+        clip, text, reason = service.wait_dj_clip(prev, nxt, _voice_fp(voice_state), _voice_ref(voice_state))
         if clip is not None:
             state["mode"] = "dj"
             fallback_msg = (" (commentary spoken in default voice — your custom reference was not used.)\n"
-                            if "_fallback" in service.dj_cache_entry(prev, nxt, _voice_fp(voice_state), character) else "")
+                            if "_fallback" in service.dj_cache_entry(prev, nxt, _voice_fp(voice_state)) else "")
             return (
                 _queue_html(state),
                 f"🎙️ **DJ:** {html.escape(text or '')}{fallback_msg}",
@@ -321,7 +321,7 @@ def advance(player_state: dict, voice_state: dict, character: str) -> tuple:
             )
         else:
             gr.Info("DJ commentary is unavailable right now — skipping to the next song.")
-        return _start_song(state, nxt_i, voice_state, character)
+        return _start_song(state, nxt_i, voice_state, dj_enabled)
 
     # mode == "dj": clip finished -> next song
     nxt_i = state["pos"] + 1
@@ -334,11 +334,11 @@ def advance(player_state: dict, voice_state: dict, character: str) -> tuple:
             "🏁 Queue finished — thanks for listening!",
             gr.update(), last_audio, gr.update(interactive=False), '', state,
         )
-    return _start_song(state, nxt_i, voice_state, character)
+    return _start_song(state, nxt_i, voice_state, dj_enabled)
 
 
-def skip(player_state: dict, voice_state: dict, character: str) -> tuple:
-    return advance(player_state, voice_state, character)
+def skip(player_state: dict, voice_state: dict, dj_enabled: bool) -> tuple:
+    return advance(player_state, voice_state, dj_enabled)
 
 
 def select_for_player(song_id: str | None, player_state: dict) -> tuple:
@@ -366,7 +366,7 @@ def select_for_player(song_id: str | None, player_state: dict) -> tuple:
             gr.update(interactive=True), lyrics_section, state)
 
 
-def play(player_state: dict, voice_state: dict, character: str) -> tuple:
+def play(player_state: dict, voice_state: dict, dj_enabled: bool) -> tuple:
     state = _player_state(player_state)
     if state["mode"] != "idle":
         state["mode"], state["pos"] = "song", max(0, state["pos"])
@@ -379,10 +379,10 @@ def play(player_state: dict, voice_state: dict, character: str) -> tuple:
             "The library is empty — generate a song first.",
             gr.update(), gr.update(), gr.update(interactive=False), '', state,
         )
-    return _start_song(state, state["pos"], voice_state, character)
+    return _start_song(state, state["pos"], voice_state, dj_enabled)
 
 
-def play_all(player_state: dict, voice_state: dict, character: str) -> tuple:
+def play_all(player_state: dict, voice_state: dict, dj_enabled: bool) -> tuple:
     songs = [s.id for s in LIBRARY.all()]
     if not songs:
         return (
@@ -391,7 +391,7 @@ def play_all(player_state: dict, voice_state: dict, character: str) -> tuple:
             gr.update(), gr.update(), gr.update(interactive=False), '', dict(player_state),
         )
     state = {"queue": songs, "pos": 0, "mode": "idle"}
-    return play(state, voice_state, character)
+    return play(state, voice_state, dj_enabled)
 
 
 def add_to_queue(song_id: str, player_state: dict) -> tuple:
@@ -824,21 +824,15 @@ def build_app() -> gr.Blocks:
                             lyrics_section = gr.HTML('', elem_id="lyricsSection")
                         gr.Markdown("### Up next")
                         queue_html = gr.HTML(_queue_html(INITIAL_PLAYER), elem_id="queuePanel")
-                        # DJ character picker — characters change personality,
-                        # pace and energy (never the voice). The custom-voice
-                        # upload lives in the Create tab.
-                        with gr.Group(elem_id="djOptionsPanel"):
-                            gr.Markdown("### DJ options")
-                            dj_character = gr.Radio(
-                                [(c["label"], cid) for cid, c in prompts.DJ_CHARACTERS.items()],
-                                value=prompts.DJ_DEFAULT_CHARACTER,
-                                label="DJ character",
-                            )
-                            gr.Markdown(
-                                "Same voice — each character changes personality, pace and energy. "
-                                "Upload a custom voice in the Create tab.",
-                                elem_classes=["aj-status-hint"],
-                            )
+                        # DJ between songs — same structure as the "Up next"
+                        # section (plain heading + control + hint). The
+                        # custom-voice upload lives in the Create tab.
+                        gr.Markdown("### DJ options")
+                        dj_enabled = gr.Checkbox(True, label="DJ between songs")
+                        gr.Markdown(
+                            "Want the DJ to sound like you? Upload a custom voice (MP3 or WAV) in the Create tab.",
+                            elem_classes=["aj-status-hint"],
+                        )
                     with gr.Column(scale=4, min_width=0, elem_id="coverArtStudio"):
                         gr.Markdown("## Cover art studio\nGive your song a visual identity.")
                         cover_track = gr.Dropdown(choices=[(s.display_label(), s.id) for s in LIBRARY.all()],
@@ -880,10 +874,10 @@ def build_app() -> gr.Blocks:
         lib_search.change(refresh_filtered_library, inputs=[lib_search], outputs=[library_gallery, gallery_ids, selected_song])
         refresh_library_btn.click(refresh_filtered_library, inputs=[lib_search], outputs=[library_gallery, gallery_ids, selected_song])
         add_queue_btn.click(add_to_queue, inputs=[selected_song, player_state], outputs=[queue_html, lib_status, player_state])
-        play_all_btn.click(play_all, inputs=[player_state, voice_state, dj_character], outputs=player_outputs)
+        play_all_btn.click(play_all, inputs=[player_state, voice_state, dj_enabled], outputs=player_outputs)
         # Play/pause, seeking, speed and volume use the single native Gradio player.
-        skip_btn.click(skip, inputs=[player_state, voice_state, dj_character], outputs=player_outputs)
-        now_audio.stop(advance, inputs=[player_state, voice_state, dj_character], outputs=player_outputs)
+        skip_btn.click(skip, inputs=[player_state, voice_state, dj_enabled], outputs=player_outputs)
+        now_audio.stop(advance, inputs=[player_state, voice_state, dj_enabled], outputs=player_outputs)
 
         def refresh_cover_choices():
             return gr.update(choices=[(s.display_label(), s.id) for s in LIBRARY.all()])

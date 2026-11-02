@@ -106,44 +106,9 @@ LYRICS_SECTION_EMPTY = (
 # ---------------------------------------------------------------------------
 # DJ commentary
 # ---------------------------------------------------------------------------
-# The character picker (Off / Classic radio / Late-night chill / Party hype)
-# changes how the DJ *speaks*, never the voice: `persona` is the injected
-# personality text below, and `speed`/`exaggeration` are the Chatterbox TTS
-# parameters for that character (the server accepts speed 0.25-4.0 and
-# exaggeration >= 0; every value here is within range). The voice is always
-# the bundled default or the user's uploaded voice — never another server
-# voice.
-DJ_CHARACTERS = {
-    "off": {
-        "label": "Off",
-        "persona": "",
-        "speed": 1.0,
-        "exaggeration": 0.0,
-    },
-    "classic": {
-        "label": "Classic radio",
-        "persona": "a friendly, upbeat radio host with a warm, energetic presence",
-        "speed": 1.0,
-        "exaggeration": 0.7,
-    },
-    "chill": {
-        "label": "Late-night chill",
-        "persona": "a calm, warm, unhurried late-night host who keeps the mood easy and relaxed",
-        "speed": 0.9,
-        "exaggeration": 0.3,
-    },
-    "hype": {
-        "label": "Party hype",
-        "persona": "a high-energy party host who talks in short, punchy sentences and lifts the room",
-        "speed": 1.15,
-        "exaggeration": 1.5,
-    },
-}
-
-DJ_DEFAULT_CHARACTER = "classic"
-
 DJ_SYSTEM = (
-    "You are the voice of 'AI Jukebox Radio' - {persona}. Write SPOKEN commentary, exactly 2-3 sentences:\n"
+    "You are the voice of 'AI Jukebox Radio' - a warm, energetic DJ who speaks "
+    "between songs. Write SPOKEN commentary, exactly 2-3 sentences:\n"
     "- Flow naturally from the song that just finished to the next song coming up.\n"
     "- You MUST mention both songs specifically: for each, its real title, and "
     "something true about its style, mood, or lyric theme.\n"

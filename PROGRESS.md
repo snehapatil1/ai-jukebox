@@ -160,3 +160,27 @@ the repeatable checks):
   README lists ffmpeg as a system requirement; reinstall it before the next
   local run (`brew install ffmpeg` or put ffprobe on PATH).
 - Local commit on branch `maddie` only — nothing pushed.
+
+## Step 8 — Simplify DJ options to a single on/off toggle (issue #9)
+- Replaced the character picker (Step 6) with one **"DJ between songs"**
+  toggle, **ON by default**. Off = songs play back to back with no DJ
+  commentary and no prefetch (the existing Off behavior is kept via early
+  returns in `advance` / `_spawn_prefetch`).
+- Character feature removed end to end: `DJ_CHARACTERS`/personas deleted from
+  `jukebox/prompts.py` (DJ_SYSTEM is back to the single warm, energetic DJ
+  personality), `speed`/`exaggeration` removed from `clients.speak` (default
+  `speed 1.0` restored), the character dropped from the DJ cache key (back to
+  `(prev_id, nxt_id, voice)`), `resolve_character` deleted.
+- Hint under the toggle: "Want the DJ to sound like you? Upload a custom
+  voice (MP3 or WAV) in the Create tab."
+- Panel restyled to match the neighboring sections: the `gr.Group` wrapper
+  and the placeholder-era dashed-box rules (`#jukeboxTabs #djOptionsPanel`)
+  in `jukebox/workspace.css` were removed; the section is now a plain
+  `### DJ options` heading + toggle + hint, like "Up next" — theme variables
+  only, so it reads correctly in both light and dark mode.
+- Tests: `tests/test_dj_characters.py` replaced by `tests/test_dj_toggle.py`
+  (single personality, speak() body, cache-key shape, toggle off/on
+  behavior); `test_brand_mark.py` now asserts the toggle and the absence of
+  the picker/placeholder box. `pytest tests/` — 34 passed + 8 subtests;
+  `py_compile` clean.
+- Local commit on branch `maddie` only — nothing pushed.

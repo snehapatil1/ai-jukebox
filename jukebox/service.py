@@ -283,53 +283,25 @@ def cover_display_path(song: Song) -> Path:
 # ---------------------------------------------------------------------------
 # 4. DJ commentary + speech (Qwen 9001 + Chatterbox 9008)
 # ---------------------------------------------------------------------------
-def resolve_character(character: str | None) -> str:
-    """Return a valid non-""off"" character id.
-
-    The app routes "off" around the DJ pipeline entirely (no commentary, no
-    prefetch); if an "off"/unknown value ever reaches a render path anyway,
-    it safely falls back to the default character instead of crashing the
-    queue.
-    """
-    if character in prompts.DJ_CHARACTERS and character != "off":
-        return character
-    return prompts.DJ_DEFAULT_CHARACTER
-
-
-def dj_commentary(prev: Song, nxt: Song, character: str = prompts.DJ_DEFAULT_CHARACTER) -> str:
-    cid = resolve_character(character)
-    system = prompts.DJ_SYSTEM.format(persona=prompts.DJ_CHARACTERS[cid]["persona"])
+def dj_commentary(prev: Song, nxt: Song) -> str:
     user = prompts.DJ_USER.format(
         prev_title=prev.title, prev_style=prev.style, prev_mood=prev.mood,
         prev_theme=prev.theme or "no theme",
         nxt_title=nxt.title, nxt_style=nxt.style, nxt_mood=nxt.mood,
         nxt_theme=nxt.theme or "no theme",
     )
-    text = clients.qwen_chat_with_fallback(system, user, max_tokens=1024)
+    text = clients.qwen_chat_with_fallback(prompts.DJ_SYSTEM, user, max_tokens=1024)
     if not text:
         raise PipelineError("Could not write DJ commentary.")
     return text.strip()
 
 
-def render_dj_clip(
-    text: str,
-    voice_ref: Path | None = None,
-    character: str = prompts.DJ_DEFAULT_CHARACTER,
-) -> bytes:
-    """Chatterbox reads the commentary. Returns MP3 bytes.
-
-    The character's speed/exaggeration are applied here; the voice is the
-    bundled default unless a user voice reference is provided.
-    """
-    cid = resolve_character(character)
-    params = prompts.DJ_CHARACTERS[cid]
+def render_dj_clip(text: str, voice_ref: Path | None = None) -> bytes:
+    """Chatterbox reads the commentary. Returns MP3 bytes."""
     ref_b64 = None
     if voice_ref is not None and voice_ref.exists():
         ref_b64 = clients.encode_ref_audio(voice_ref.read_bytes())
-    return clients.speak(
-        text, ref_audio_b64=ref_b64,
-        speed=params["speed"], exaggeration=params["exaggeration"],
-    )
+    return clients.speak(text, ref_audio_b64=ref_b64)
 
 
 # ---------------------------------------------------------------------------
@@ -409,49 +381,46 @@ def validate_voice_file(path: str) -> tuple[bool, str]:
 
 
 # ---------------------------------------------------------------------------
-# 6. Prefetched DJ clips, cached per (song pair, voice, character) for the session
+# 6. Prefetched DJ clips, cached per (song pair, voice) for the session
 # ---------------------------------------------------------------------------
-_DJ_CACHE: dict[tuple, dict] = {}   # (prev_id, nxt_id, voice_fp, character) -> {"clip": rel-or-"", "text": str}
+_DJ_CACHE: dict[tuple, dict] = {}   # (prev_id, nxt_id, voice_fp) -> {"clip": rel-or-"", "text": str}
 _DJ_EVENTS: dict[tuple, threading.Event] = {}
 _DJ_LOCK = threading.Lock()
 
 
-def _dj_key(prev: Song, nxt: Song, voice_fp: str, character: str) -> tuple:
-    return (prev.id, nxt.id, voice_fp, resolve_character(character))
+def _dj_key(prev: Song, nxt: Song, voice_fp: str) -> tuple:
+    return (prev.id, nxt.id, voice_fp)
 
 
-def dj_cache_entry(prev: Song, nxt: Song, voice_fp: str, character: str) -> dict:
-    """Read-only view of the cached result for (prev -> nxt, voice, character)."""
+def dj_cache_entry(prev: Song, nxt: Song, voice_fp: str) -> dict:
+    """Read-only view of the cached result for (prev -> nxt, voice)."""
     with _DJ_LOCK:
-        return dict(_DJ_CACHE.get(_dj_key(prev, nxt, voice_fp, character), {}) or {})
+        return dict(_DJ_CACHE.get(_dj_key(prev, nxt, voice_fp), {}) or {})
 
 
-def prefetch_dj_clip(prev: Song, nxt: Song, voice_fp: str, voice_ref: Path | None,
-                     character: str = prompts.DJ_DEFAULT_CHARACTER) -> None:
+def prefetch_dj_clip(prev: Song, nxt: Song, voice_fp: str, voice_ref: Path | None) -> None:
     """Start a background thread generating the DJ clip for (prev -> nxt).
 
-    Safe to call repeatedly: one generation per (pair, voice, character) per
-    session. The character is part of the cache key, so switching characters
-    generates fresh commentary and a new clip.
+    Safe to call repeatedly: one generation per (pair, voice) per session.
     """
-    key = _dj_key(prev, nxt, voice_fp, character)
+    key = _dj_key(prev, nxt, voice_fp)
     with _DJ_LOCK:
         if key in _DJ_CACHE or key in _DJ_EVENTS:
             return
         event = threading.Event()
         _DJ_EVENTS[key] = event
     threading.Thread(
-        target=_dj_worker, args=(key, prev, nxt, voice_ref, character, event), daemon=True
+        target=_dj_worker, args=(key, prev, nxt, voice_ref, event), daemon=True
     ).start()
 
 
 def _dj_worker(key: tuple, prev: Song, nxt: Song, voice_ref: Path | None,
-               character: str, event: threading.Event) -> None:
+               event: threading.Event) -> None:
     result = {"clip": "", "text": ""}
     error_reason = ""
     try:
-        text = dj_commentary(prev, nxt, character)
-        audio = render_dj_clip(text, voice_ref, character)
+        text = dj_commentary(prev, nxt)
+        audio = render_dj_clip(text, voice_ref)
         path = config.DJ_DIR / clients.new_filename(".mp3")
         path.write_bytes(audio)
         result = {"clip": str(path.relative_to(config.ROOT)), "text": text}
@@ -461,8 +430,8 @@ def _dj_worker(key: tuple, prev: Song, nxt: Song, voice_ref: Path | None,
             # Custom voice was requested — fall back to default voice on any failure
             log.info("Custom voice rendering failed — falling back to default voice for %s -> %s", key[0][:8], key[1][:8])
             try:
-                text = dj_commentary(prev, nxt, character)
-                audio = render_dj_clip(text, voice_ref=None, character=character)
+                text = dj_commentary(prev, nxt)
+                audio = render_dj_clip(text, voice_ref=None)
                 path = config.DJ_DIR / clients.new_filename(".mp3")
                 path.write_bytes(audio)
                 result = {"clip": str(path.relative_to(config.ROOT)), "text": text, "_fallback": True}
@@ -481,7 +450,6 @@ def wait_dj_clip(
     nxt: Song,
     voice_fp: str,
     voice_ref: Path | None,
-    character: str = prompts.DJ_DEFAULT_CHARACTER,
     timeout: float = config.DJ_WAIT_FOR_PREFETCH,
 ) -> tuple[Path | None, str | None, str]:
     """Wait for the prefetched clip; returns (path, text, error_reason).
@@ -491,7 +459,7 @@ def wait_dj_clip(
     * error_reason == 'service'    → service unavailable / generic failure
     Returns (None, None, reason) on complete failure.
     """
-    key = _dj_key(prev, nxt, voice_fp, character)
+    key = _dj_key(prev, nxt, voice_fp)
     with _DJ_LOCK:
         cached = _DJ_CACHE.get(key)
         if cached is not None:
@@ -504,7 +472,7 @@ def wait_dj_clip(
             event = threading.Event()
             _DJ_EVENTS[key] = event
             threading.Thread(
-                target=_dj_worker, args=(key, prev, nxt, voice_ref, character, event), daemon=True
+                target=_dj_worker, args=(key, prev, nxt, voice_ref, event), daemon=True
             ).start()
     event.wait(timeout=timeout)
     with _DJ_LOCK:
