@@ -25,6 +25,13 @@ DJ_DIR = DATA_DIR / "dj"                # generated DJ clips (cached)
 VOICE_DIR = DATA_DIR / "voice_refs"     # user voice references (gitignored temp)
 LIBRARY_FILE = DATA_DIR / "library.json"
 
+# Bundled sample songs — tracked in git (unlike data/) so they ship in the
+# submission ZIP; filled by scripts/add_sample.py, never written by the app.
+SAMPLES_DIR = ROOT / "samples"
+SAMPLES_AUDIO_DIR = SAMPLES_DIR / "audio"
+SAMPLES_COVERS_DIR = SAMPLES_DIR / "covers"
+SAMPLES_MANIFEST = SAMPLES_DIR / "samples.json"
+
 for _d in (AUDIO_DIR, COVER_DIR, DJ_DIR, VOICE_DIR):
     _d.mkdir(parents=True, exist_ok=True)
 

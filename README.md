@@ -14,7 +14,7 @@ for the full step log and test evidence.
 
 ## Features
 
-1. **Custom song generation** — pick a style, mood, duration (10–60 s slider,
+1. **Custom song generation** — pick a style, mood, duration (10–120 s slider,
    enforced 10–120 s in code), instrumental or vocal, and an optional theme.
    Qwen writes the title (and original lyrics for vocal tracks, shown in the
    UI), ACE-Step composes the audio, and the song lands in the library
@@ -80,6 +80,78 @@ Configuration comes from environment variables or the gitignored `.env`.
 The app fails fast at startup if `LLM_API_KEY` is missing. Base URLs default
 to the class endpoints and can be overridden per service (see `.env.example`).
 
+## Sample songs
+
+`samples/` holds ready-to-play songs that ship with the repository (they
+must appear in the submission ZIP, unlike generated songs in the gitignored
+`data/`):
+
+```
+samples/
+  audio/         sample MP3s
+  covers/        sample cover PNGs
+  samples.json   manifest: id, title, style, mood, duration_sec,
+                 instrumental, theme, lyrics, created_by, cover_prompt,
+                 and the audio/cover filenames
+```
+
+At startup the app registers every sample in `samples.json` that is not
+already in the library — matched by its fixed id, pointing at the files in
+place. Nothing is copied into `data/`, and restarting never duplicates a
+sample. Samples whose audio or cover file is missing are skipped with a
+logged warning, and deleting a sample from the Library tab removes only the
+library entry, never the files in `samples/`.
+
+To turn a locally generated song into a sample:
+
+```bash
+python scripts/add_sample.py "<song id or title>"
+```
+
+The script looks the song up in `data/library.json` (id, exact title, or a
+unique title match), copies its MP3 and cover into `samples/`, and appends
+its metadata to `samples.json`. Only the song's own audio and cover are
+copied — voice references, DJ clips, and everything else in `data/` are
+never touched. Re-running it for the same song replaces the existing entry
+in place. Commit `samples/` afterwards so the sample ships in the ZIP.
+
+## How the sample songs were made
+
+Each sample was generated through the app itself — the Create tab ran the
+same pipeline any user song runs, using only the class AI services: **Qwen
+(port 9001)** wrote the title and lyrics, **ACE-Step (port 9007)** composed
+the audio, and **FLUX (port 9006)** produced the cover art.
+
+### Sample 1 — "Calloused Fingers Break The Silence" (id `b206632d8cc0`)
+
+- **Genre (custom text):** "epic hard rock, huge distorted guitar riffs,
+  thundering live drums, driving bassline, powerful raw male vocals,
+  anthemic build"
+- **Mood:** Epic — **vocal** — **duration:** 100 s
+- **Theme (as entered in the Create tab):**
+
+> genre: epic hard rock, huge distorted guitar riffs, thundering live
+> drums, driving bassline, powerful raw male vocals, anthemic build.
+> theme: Keeping music human. A singer's voice cracking on the high note
+> because she means it; a kid practicing the same chords every night for
+> years; a crowd screaming the chorus back. Real people, real voices, real
+> passion. Is losing that really progress? Starts heavy and doubtful, ends
+> huge and defiant. Never mention algorithms, computers, AI, or machines.
+
+- **Selection process:** about 20 generations were run for this track; the
+  best-sounding take was kept. The AI-generated title was kept as is.
+- **Cover:** regenerated afterwards in the Cover Art Studio — **Abstract**
+  style, description *"Abstract art showing the feeling of loss and
+  confusion but still unsettled and defiant."*, palette *"contrast between
+  dark blues and orangey reds"*. The final FLUX prompt is stored in
+  `samples.json` (`cover_prompt`).
+- **Assets:** `samples/audio/b206632d8cc0.mp3`, `samples/covers/b206632d8cc0.png`
+
+### Samples 2 and 3 — pending
+
+Two more sample songs are planned to reach the required three; each will get
+the same block here when added.
+
 ## Class services used
 
 | Port | Service | Job in this app |
@@ -101,6 +173,9 @@ jukebox/
   prompts.py            # prompt contracts (all-original content rules)
   service.py            # pipelines: draft, compose, cover, DJ, voice validation
   library.py            # song library with JSON persistence
+  samples.py            # bundled sample loading from samples/ (tracked in git)
+samples/                # ready-to-play sample songs (audio/, covers/, samples.json)
+scripts/add_sample.py   # turn a generated song into a bundled sample
 scripts/smoke_test.py   # end-to-end sanity checks against the live services
 ```
 

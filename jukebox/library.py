@@ -3,12 +3,16 @@
 Songs live on disk under ``data/`` (gitignored) and are tracked in
 ``data/library.json`` with paths relative to the repository root, so the app
 has no dependency on absolute machine paths and survives server restarts.
+Bundled sample songs (``samples/``, tracked in git) are registered the same
+way but their files are never copied into ``data/`` and are never deleted
+by the app.
 """
 from __future__ import annotations
 
 import hashlib
 import html
 import json
+import logging
 import threading
 import uuid
 from dataclasses import asdict, dataclass, field
@@ -18,6 +22,7 @@ from pathlib import Path
 from . import config
 
 _LOCK = threading.Lock()
+log = logging.getLogger("jukebox.library")
 
 
 @dataclass
@@ -91,9 +96,11 @@ class SongLibrary:
         with _LOCK:
             return self._songs.get(song_id)
 
-    def add(self, **fields) -> Song:
+    def add(self, id: str | None = None, **fields) -> Song:
         with _LOCK:
-            song = Song(id=uuid.uuid4().hex[:12], **fields)
+            # An explicit id keeps bundled samples stable across restarts;
+            # generated songs get a fresh random id as before.
+            song = Song(id=id or uuid.uuid4().hex[:12], **fields)
             self._songs[song.id] = song
             self._save()
             return song
@@ -116,19 +123,33 @@ class SongLibrary:
             # Remove associated audio file
             if song.audio_path:
                 audio_file = config.ROOT / song.audio_path
-                try:
-                    audio_file.unlink(missing_ok=True)
-                except OSError:
-                    pass
+                self._unlink_unless_sample(audio_file, "audio", song_id)
             # Remove cover art if present
             if song.cover_path:
                 cover_file = config.ROOT / song.cover_path
-                try:
-                    cover_file.unlink(missing_ok=True)
-                except OSError:
-                    pass
+                self._unlink_unless_sample(cover_file, "cover", song_id)
             self._save()
             return True
+
+    @staticmethod
+    def _unlink_unless_sample(file: Path, what: str, song_id: str) -> None:
+        """Delete *file*, unless it belongs to the bundled samples/ folder.
+
+        Sample assets are tracked in git and must survive library deletions —
+        deleting a sample in the app removes the library entry only.
+        """
+        try:
+            if file.resolve().is_relative_to(config.SAMPLES_DIR.resolve()):
+                log.info(
+                    "Keeping %s sample asset for %s: %s", what, song_id, file
+                )
+                return
+        except OSError:
+            pass
+        try:
+            file.unlink(missing_ok=True)
+        except OSError:
+            pass
 
     @staticmethod
     def rel(path: Path) -> str:

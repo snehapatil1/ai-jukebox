@@ -108,7 +108,50 @@ the repeatable checks):
   before the user asked to hold off).
 - Test songs were removed after every verification run; the library is clean.
 
-## Step 6 — DJ character picker (issue #9)
+## Step 6 — Sample-song shipping (branch `maddie-samples`, from origin/master 913bbda)
+Ships the sample-song mechanism the assignment requires (three ready-to-play
+sample songs with titles + covers must be in the GitHub ZIP; generated songs
+stay in the gitignored `data/`). No songs generated, no class services called.
+
+- `samples/` (tracked; verified `git check-ignore` does NOT match it):
+  `audio/`, `covers/` (both with `.gitkeep` so the ZIP ships the structure),
+  and `samples.json` — currently `[]` by design; filled via the script below.
+- `jukebox/samples.py` — `load_samples()`: registers each manifest entry not
+  already in the library, matched by fixed id, pointing at files in place
+  (never copies into `data/`); entries with missing audio/cover are skipped
+  with a logged warning; re-running (restart) adds nothing → no duplicates.
+- `jukebox/library.py` — `SongLibrary.add(id=None, ...)` keeps an explicit id
+  (samples) while generated songs still get a fresh uuid; `delete()` now
+  refuses to unlink any file under `samples/` (logged "Keeping … sample
+  asset"), so deleting a sample in the app removes the library entry only.
+- `app.py` — calls `load_samples(LIBRARY)` after the library loads, and adds
+  `config.SAMPLES_DIR` to `launch(allowed_paths=...)` so sample covers/audio
+  stream through the `/gradio_api/file=` route.
+- `scripts/add_sample.py` — given a song id or title from `data/library.json`,
+  copies ONLY that song's MP3 + cover into `samples/` and appends its metadata
+  to `samples.json` (re-runs replace the entry in place). Refuses: missing
+  audio, missing cover, already-a-sample, unknown/ambiguous title.
+- Docs: README "Sample songs" section (folder explainer + script usage);
+  project-layout tree updated.
+
+Test evidence (`.venv/bin/python -m pytest tests/ -q`, Python 3.14.10):
+- `33 passed, 8 subtests passed` (4 new `tests/test_samples.py` groups:
+  load-in-place w/o data/ copies, no duplicates on restart, missing files
+  skipped with warning, delete keeps sample files, missing manifest no-op,
+  fixed-id add).
+- `scripts/add_sample.py` verified against a throwaway temp tree (never the
+  real data/): add by id, re-run updates in place (no duplicate ids), only
+  audio+cover copied (voice_refs/other data/ files untouched), refusals for
+  no-cover and unknown songs.
+- Launch smoke test: app booted on **127.0.0.1:7861** (user's app/port 7860
+  never touched) with static-ffmpeg ffprobe on PATH — `/config` returned
+  blocks title "AI Jukebox" (same readiness check `launcher.py` uses) and a
+  `/gradio_api/file=` URL under `samples/` returned HTTP 200 (allowed_paths
+  registration works); instance shut down, both ports clear afterwards.
+- Committed locally on `maddie-samples` only; `maddie` (PR #11) untouched;
+  no push, no PR.
+
+## Step 7 — DJ character picker (issue #9)
 - Replaced the "DJ options — Coming soon" placeholder with a single picker in
   the Library player panel: **Off / Classic radio (default) / Late-night
   chill / Party hype**, plus one hint line pointing at the Create-tab voice
@@ -135,7 +178,7 @@ the repeatable checks):
   `data/dj-test-clips/` removed.
 - Local commit on branch `maddie` only — nothing pushed.
 
-## Step 7 — Fix: queue items no longer autoplay (issue #9)
+## Step 8 — Fix: queue items no longer autoplay (issue #9)
 - **Symptom (user report):** after Play all, each next item (song or DJ clip)
   loaded but stayed paused; manual play worked per item.
 - **Root cause (static analysis + live browser repro):** Gradio 6.30's Audio
@@ -161,8 +204,8 @@ the repeatable checks):
   local run (`brew install ffmpeg` or put ffprobe on PATH).
 - Local commit on branch `maddie` only — nothing pushed.
 
-## Step 8 — Simplify DJ options to a single on/off toggle (issue #9)
-- Replaced the character picker (Step 6) with one **"DJ between songs"**
+## Step 9 — Simplify DJ options to a single on/off toggle (issue #9)
+- Replaced the character picker (Step 7) with one **"DJ between songs"**
   toggle, **ON by default**. Off = songs play back to back with no DJ
   commentary and no prefetch (the existing Off behavior is kept via early
   returns in `advance` / `_spawn_prefetch`).

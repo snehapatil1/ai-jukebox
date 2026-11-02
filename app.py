@@ -27,6 +27,7 @@ import gradio as gr
 
 from jukebox import clients, config, service
 from jukebox.library import Song, SongLibrary
+from jukebox.samples import load_samples
 
 config.setup_logging()
 config.check_config()
@@ -38,6 +39,13 @@ LOG = logging.getLogger("jukebox.app")
 log = LOG  # Preserve legacy pipeline logging calls.
 
 LIBRARY = SongLibrary()
+
+# Register bundled sample songs from the tracked samples/ folder (matched by
+# fixed id; idempotent, so restarts never duplicate them). Missing sample
+# files are skipped with a warning by the loader.
+_SAMPLES_ADDED = load_samples(LIBRARY)
+if _SAMPLES_ADDED:
+    LOG.info("Registered %d bundled sample song(s).", _SAMPLES_ADDED)
 
 # ---------------------------------------------------------------------------
 # UI constants
@@ -784,7 +792,7 @@ def build_app() -> gr.Blocks:
                     with gr.Row():
                         style = gr.Dropdown(GENRES, value="Pop", allow_custom_value=True, label="Genre")
                         mood = gr.Dropdown(MOODS, value="Happy", label="Mood")
-                    duration = gr.Slider(config.DURATION_MIN, 60, value=config.DURATION_DEFAULT, step=5, label="Duration (seconds)")
+                    duration = gr.Slider(config.DURATION_MIN, config.DURATION_MAX, value=config.DURATION_DEFAULT, step=5, label="Duration (seconds)")
                     instrumental = gr.Checkbox(False, label="Instrumental (no lyrics)")
                     theme = gr.Textbox("", label="Theme / Story", lines=3, placeholder="What is your song about?")
                     gen_btn = gr.Button("Generate Song", variant="primary")
@@ -947,7 +955,10 @@ if __name__ == "__main__":
         # Cover art lives under data/covers; registering it here lets the
         # /gradio_api/file= URLs used by queue/gallery thumbnails always be
         # served, regardless of the working directory the app was launched from.
-        allowed_paths=[str(config.DATA_DIR), str(Path(__file__).parent / "jukebox")],
+        # samples/ is registered the same way so bundled sample covers and
+        # audio stream from their tracked location.
+        allowed_paths=[str(config.DATA_DIR), str(config.SAMPLES_DIR),
+                       str(Path(__file__).parent / "jukebox")],
         theme=gr.themes.Soft(
             primary_hue="violet",
             secondary_hue="indigo",
