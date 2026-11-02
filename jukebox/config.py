@@ -79,7 +79,7 @@ TTS_MAX_TEXT_CHARS = 4000              # server limit is 4096
 
 # How long to wait for a prefetched DJ clip before generating synchronously
 # (seconds). Keeps the queue moving when commentary is slow.
-DJ_WAIT_FOR_PREFETCH = 150
+DJ_WAIT_FOR_PREFETCH = 30
 
 LOG_FORMAT = "%(asctime)s %(levelname)s %(name)s: %(message)s"
 

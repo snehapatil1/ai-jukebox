@@ -251,15 +251,24 @@ def advance(player_state: dict, voice_state: dict) -> tuple:
         prev, nxt = LIBRARY.get(state["queue"][state["pos"]]), LIBRARY.get(state["queue"][nxt_i])
         if prev is None or nxt is None:
             return _start_song(state, nxt_i, voice_state)
-        clip, text = service.wait_dj_clip(prev, nxt, _voice_fp(voice_state), _voice_ref(voice_state))
+        clip, text, reason = service.wait_dj_clip(prev, nxt, _voice_fp(voice_state), _voice_ref(voice_state))
         if clip is not None:
             state["mode"] = "dj"
+            fallback_msg = (" (commentary spoken in default voice — your custom reference was not used.)\n"
+                            if "_fallback" in service._DJ_CACHE.get((prev.id, nxt.id, _voice_fp(voice_state)), {}) else "")
             return (
                 _queue_html(state),
-                f"🎙️ **DJ:** {html.escape(text or '')}",
+                f"🎙️ **DJ:** {html.escape(text or '')}{fallback_msg}",
                 gr.update(), _audio_value(clip, True), gr.update(interactive=True), '', state,
             )
-        gr.Info("DJ commentary is unavailable right now — skipping to the next song.")
+        # No clip ready — show specific message based on failure type
+        if reason == "voice":
+            gr.Warning(
+                "Custom voice couldn't be used for this commentary. Try a clearer 10–30 second MP3 or WAV recording of speech. "
+                "The DJ will try again with the default voice next time."
+            )
+        else:
+            gr.Info("DJ commentary is unavailable right now — skipping to the next song.")
         return _start_song(state, nxt_i, voice_state)
 
     # mode == "dj": clip finished -> next song
@@ -578,8 +587,10 @@ def on_voice_upload(filepath: str | None, voice_state: dict):
     if not ok:
         return f"❌ {msg}", gr.update(interactive=False), gr.update(value=None), voice_state
     src = Path(filepath)
-    dest = config.VOICE_DIR / f"voice_{clients.new_filename(src.suffix)}"
-    shutil.copy2(src, dest)
+    # _convert_to_wav replaces the original with a .wav copy; use that for storage
+    actual_path = src.with_suffix(".wav") if src.suffix.lower() not in service.VALID_VOICE_EXTS else src
+    dest = config.VOICE_DIR / f"voice_{clients.new_filename(actual_path.suffix)}"
+    shutil.copy2(actual_path, dest)
     new_state = {"path": str(dest), "name": src.name}
     return (
         f"✅ Custom DJ voice ready: *{src.name}* ({msg}) — voice cloning enabled.",
@@ -666,7 +677,7 @@ def build_app() -> gr.Blocks:
                 queue_html = gr.HTML(_queue_html(INITIAL_PLAYER))
 
                 gr.Markdown("### 🎙️ DJ Voice")
-                voice_upload = gr.Audio(type="filepath", label="Custom DJ voice (optional MP3/WAV)", sources=["upload"])
+                voice_upload = gr.Audio(type="filepath", label="Custom DJ voice (optional MP3, WAV, or M4A)", sources=["upload"])
                 voice_status = gr.Markdown("Using the default bundled DJ voice.")
                 remove_voice_btn = gr.Button("Remove custom voice", interactive=False)
 

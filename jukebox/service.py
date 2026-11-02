@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import logging
 import re
+import subprocess
 import threading
 from pathlib import Path
 
@@ -285,22 +286,137 @@ def render_dj_clip(text: str, voice_ref: Path | None = None) -> bytes:
 # 5. Custom-voice validation
 # ---------------------------------------------------------------------------
 VALID_VOICE_EXTS = {".mp3", ".wav"}
+CONVERTIBLE_VOICE_EXTS = {".m4a", ".aac", ".ogg", ".flac", ".wma"}
+
+
+def _find_ffprobe() -> str | None:
+    """Try to locate ffprobe; return path or None if not available."""
+    for candidate in ("ffprobe", "ffmpeg"):
+        try:
+            subprocess.run([candidate, "-version"], capture_output=True, timeout=5)
+            return candidate
+        except (FileNotFoundError, subprocess.TimeoutExpired):
+            continue
+    return None
+
+
+FFPROBE_BIN = _find_ffprobe()
+
+
+def _check_voice_duration(path: Path) -> tuple[bool, str]:
+    """Return (ok, message) after checking voice file duration with ffprobe/ffmpeg.
+    
+    Rejects references longer than 60 seconds or shorter than 3 seconds.
+    Skips the check entirely if ffprobe is not installed.
+    """
+    if FFPROBE_BIN is None:
+        return True, ""  # ffprobe missing — skip gracefully
+    
+    try:
+        import re as _re
+        result = subprocess.run(
+            [FFPROBE_BIN, "-hide_banner", "-i", str(path)],
+            capture_output=True, text=True, timeout=10,
+        )
+        # Duration appears in stderr as "Duration: HH:MM:SS.mmm"
+        stderr = result.stderr.lower()
+        m = _re.search(r"duration:\s*(\d+):(\d+):(\d+)\.(\d+)", stderr)
+        if m:
+            total_sec = int(m.group(1)) * 3600 + int(m.group(2)) * 60 + int(m.group(3)) + int(m.group(4)) / 1000
+        else:
+            return True, ""  # can't parse — don't block
+        
+        if total_sec > 60:
+            return False, "Voice reference must be between 3 and 60 seconds long."
+        if total_sec < 3:
+            return False, "Voice reference must be between 3 and 60 seconds long."
+        return True, ""
+    except (subprocess.SubprocessError, FileNotFoundError, ValueError):
+        return True, ""  # ffprobe failed — skip gracefully
+
+
+def _convert_to_wav(src_path: Path) -> tuple[bool, str]:
+    """Convert a non-MP3/WAV audio file (e.g. .m4a) to WAV via ffmpeg.
+
+    Returns (ok, error_msg). If ok is True, src_path has been replaced with a
+    WAV copy and the caller should validate that new path.
+    """
+    ext = src_path.suffix.lower()
+    if ext not in CONVERTIBLE_VOICE_EXTS:
+        return False, f"Format '{ext}' cannot be converted — only MP3 or WAV voice files work."
+
+    wav_path = src_path.with_suffix(".wav")
+
+    for candidate in ("ffmpeg", "ffprobe"):
+        try:
+            subprocess.run([candidate, "-version"], capture_output=True, timeout=5)
+            bin_name = candidate
+            break
+        except (FileNotFoundError, subprocess.TimeoutExpired):
+            continue
+    else:
+        return False, "ffmpeg is not installed on this system. Export your voice memo as MP3 or WAV first."
+
+    try:
+        subprocess.run(
+            [bin_name, "-hide_banner", "-y", "-i", str(src_path), str(wav_path)],
+            capture_output=True, text=True, timeout=60,
+        )
+        if not wav_path.exists() or wav_path.stat().st_size < 100:
+            return False, "Conversion produced an empty file — try exporting your recording as MP3 or WAV."
+        # Replace the original with the WAV version so subsequent validation uses it
+        src_path.unlink(missing_ok=True)
+        return True, ""
+    except subprocess.TimeoutExpired:
+        wav_path.unlink(missing_ok=True)
+        return False, "Conversion timed out — your file may be too large; export as MP3 or WAV instead."
+    except Exception as exc:
+        wav_path.unlink(missing_ok=True)
+        return False, f"Conversion failed ({exc}) — export your recording as MP3 or WAV first."
 
 
 def validate_voice_file(path: str) -> tuple[bool, str]:
-    """Check extension and size for a user voice reference (MP3/WAV only)."""
+    """Check extension, convert if needed, and size for a user voice reference."""
     p = Path(path)
-    if p.suffix.lower() not in VALID_VOICE_EXTS:
-        return False, "Voice reference must be an MP3 or WAV file."
-    size = p.stat().st_size
-    if size <= 0:
-        return False, "The uploaded voice reference is empty."
-    if size > config.VOICE_MAX_BYTES:
-        return False, (
-            f"Voice reference is {size / 1e6:.1f} MB — the limit is "
-            f"{config.VOICE_MAX_BYTES / 1e6:.0f} MB."
-        )
-    return True, f"{size / 1e6:.1f} MB"
+    ext = p.suffix.lower()
+
+    # Already a supported format — just validate
+    if ext in VALID_VOICE_EXTS:
+        size = p.stat().st_size
+        if size <= 0:
+            return False, "The uploaded voice reference is empty."
+        if size > config.VOICE_MAX_BYTES:
+            return False, (
+                f"Voice reference is {size / (1024 * 1024):.1f} MB — the limit is "
+                f"{config.VOICE_MAX_BYTES / (1024 * 1024):.0f} MB."
+            )
+        ok, dur_msg = _check_voice_duration(p)
+        if not ok:
+            return False, dur_msg
+        return True, f"{size / (1024 * 1024):.1f} MB"
+
+    # Convertible but needs conversion (e.g. .m4a)
+    if ext in CONVERTIBLE_VOICE_EXTS:
+        ok, err = _convert_to_wav(p)
+        if not ok:
+            return False, err
+        # Validate the newly created WAV
+        wav_p = p.with_suffix(".wav")
+        size = wav_p.stat().st_size
+        if size <= 0:
+            return False, "The uploaded voice reference is empty after conversion."
+        if size > config.VOICE_MAX_BYTES:
+            return False, (
+                f"Voice reference is {size / (1024 * 1024):.1f} MB — the limit is "
+                f"{config.VOICE_MAX_BYTES / (1024 * 1024):.0f} MB."
+            )
+        ok, dur_msg = _check_voice_duration(wav_p)
+        if not ok:
+            return False, dur_msg
+        return True, f"Converted from {ext} → WAV ({size / (1024 * 1024):.1f} MB)"
+
+    # Unsupported format entirely
+    return False, f"'{ext}' is not a supported format. Only MP3 or WAV voice files work (iPhone Voice Memos are .m4a — export or convert them first)."
 
 
 # ---------------------------------------------------------------------------
@@ -329,17 +445,31 @@ def prefetch_dj_clip(prev: Song, nxt: Song, voice_fp: str, voice_ref: Path | Non
 
 def _dj_worker(key: tuple, prev: Song, nxt: Song, voice_ref: Path | None, event: threading.Event) -> None:
     result = {"clip": "", "text": ""}
+    error_reason = ""
     try:
         text = dj_commentary(prev, nxt)
         audio = render_dj_clip(text, voice_ref)
         path = config.DJ_DIR / clients.new_filename(".mp3")
         path.write_bytes(audio)
         result = {"clip": str(path.relative_to(config.ROOT)), "text": text}
-    except Exception as exc:  # noqa: BLE001 - any failure just skips the commentary
+    except Exception as exc:  # noqa: BLE001
         log.warning("DJ prefetch failed for pair %s: %s", key[:2], exc)
+        if voice_ref is not None:
+            # Custom voice was requested — fall back to default voice on any failure
+            log.info("Custom voice rendering failed — falling back to default voice for %s -> %s", key[0][:8], key[1][:8])
+            try:
+                text = dj_commentary(prev, nxt)
+                audio = render_dj_clip(text, voice_ref=None)
+                path = config.DJ_DIR / clients.new_filename(".mp3")
+                path.write_bytes(audio)
+                result = {"clip": str(path.relative_to(config.ROOT)), "text": text, "_fallback": True}
+            except Exception as retry_exc:
+                error_reason = f"Fallback also failed: {retry_exc}"
+        else:
+            error_reason = str(exc)[:200]
     finally:
         with _DJ_LOCK:
-            _DJ_CACHE[key] = result
+            _DJ_CACHE[key] = {**result, "_error": error_reason}
         event.set()
 
 
@@ -349,18 +479,22 @@ def wait_dj_clip(
     voice_fp: str,
     voice_ref: Path | None,
     timeout: float = config.DJ_WAIT_FOR_PREFETCH,
-) -> tuple[Path | None, str | None]:
-    """Wait for the prefetched clip; returns (path, text) or (None, None).
+) -> tuple[Path | None, str | None, str]:
+    """Wait for the prefetched clip; returns (path, text, error_reason).
 
-    Registers a prefetch if none is in flight (e.g. the queue was edited).
+    * error_reason == ''           → success (clip is valid path)
+    * error_reason == 'voice'      → custom voice rejected; fallback succeeded
+    * error_reason == 'service'    → service unavailable / generic failure
+    Returns (None, None, reason) on complete failure.
     """
     key = (prev.id, nxt.id, voice_fp)
     with _DJ_LOCK:
         cached = _DJ_CACHE.get(key)
         if cached is not None:
-            if not cached.get("clip"):
-                return None, None
-            return config.ROOT / cached["clip"], cached.get("text")
+            clip_path = cached.get("clip")
+            if not clip_path:
+                return None, None, "service"
+            return config.ROOT / clip_path, cached.get("text"), ""
         event = _DJ_EVENTS.get(key)
         if event is None:
             event = threading.Event()
@@ -371,6 +505,14 @@ def wait_dj_clip(
     event.wait(timeout=timeout)
     with _DJ_LOCK:
         cached = _DJ_CACHE.get(key)
-    if cached is None or not cached.get("clip"):
-        return None, None
-    return config.ROOT / cached["clip"], cached.get("text")
+    if cached is None:
+        return None, None, "service"
+    clip_path = cached.get("clip")
+    if not clip_path:
+        err = cached.get("_error", "")
+        reason = "voice" if "_fallback" in cached else "service"
+        return None, None, reason
+    # Fallback succeeded — custom voice was rejected but default voice produced a clip
+    if cached.get("_fallback"):
+        return config.ROOT / clip_path, cached.get("text"), "voice"
+    return config.ROOT / clip_path, cached.get("text"), ""
