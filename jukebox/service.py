@@ -196,7 +196,11 @@ def _select_key_lines(lyrics: str, count: int = 6) -> list[str]:
     return [line for _, line in scored[:count]]
 
 
-def cover_prompt_for(song: Song, *, custom_prompt: str | None = None) -> str:
+def cover_prompt_for(
+    song: Song, *, custom_prompt: str | None = None,
+    user_description: str = "", artistic_style: str = "Illustration",
+    color_palette: str = "",
+) -> str:
     """Qwen writes a FLUX-safe prompt for this song's cover.
 
     If *custom_prompt* is given, the user has already written/edited the
@@ -205,6 +209,12 @@ def cover_prompt_for(song: Song, *, custom_prompt: str | None = None) -> str:
     if custom_prompt and custom_prompt.strip():
         return custom_prompt.strip()
 
+    medium = {
+        "Photo": "Photographic treatment with natural materials, realistic lighting and lens-based composition; not drawn art.",
+        "Illustration": "Drawn or painted artwork with expressive illustrative marks and designed shapes; not a photographic image.",
+        "Minimal": "Simplified forms, limited detail, a restrained palette and intentional negative space; no dense textures or decorative clutter.",
+        "Abstract": "Nonliteral visual metaphor made of expressive shapes, color fields and rhythmic forms rather than a representational scene.",
+    }.get(artistic_style, "Preserve the selected artistic style.")
     # Build the user-side prompt with selected lyric excerpts.
     theme_or_none = (song.theme or "none").strip()
     lyrics_section = prompts.LYRICS_SECTION_EMPTY
@@ -223,14 +233,26 @@ def cover_prompt_for(song: Song, *, custom_prompt: str | None = None) -> str:
         theme_or_none=theme_or_none,
         lyrics_section=lyrics_section,
     )
+    user += (
+        "\nExplicit user description (honor all visual choices): " + (user_description.strip() or "none")
+        + "\nSelected artistic style: " + (artistic_style.strip() or "Illustration")
+        + "\nMedium requirements: " + medium
+        + "\nExplicit color palette: " + (color_palette.strip() or "choose a coordinated palette for the song")
+    )
     text = clients.qwen_chat_with_fallback(prompts.COVER_SYSTEM, user, max_tokens=1024,
-                                           temperature=config.CREATIVE_TEMPERATURE)
-    if not text:
+                                           temperature=0.5)
+    if not text or not text.strip():
         raise PipelineError("Could not write a cover prompt — please try again.")
     # strip wrapping quotes the model sometimes adds
     if len(text) >= 2 and text[0] == '"' and text[-1] == '"':
         text = text[1:-1]
-    return text.strip()
+    constraints = (
+        f" Artistic style: {artistic_style.strip() or 'Illustration'}. {medium}"
+        + (f" Color palette: {color_palette.strip()}." if color_palette.strip() else "")
+        + " Square album artwork, one clear focal point recognizable at thumbnail size."
+        + " No lettering, logos, signatures, or watermarks. The title is displayed separately in the app."
+    )
+    return text.strip() + constraints
 
 
 def generate_cover(song: Song, *, custom_prompt: str | None = None) -> tuple[Path, str]:

@@ -224,6 +224,7 @@ main { min-height: 0 !important; padding: 0 !important; max-height: none !import
   border: 1px solid var(--aj-line) !important; border-radius: var(--radius-lg) !important;
   padding: 24px !important; box-shadow: 0 4px 24px rgba(0,0,0,0.15) !important;
   backdrop-filter: blur(var(--glass-blur)); -webkit-backdrop-filter: blur(var(--glass-blur));
+  outline: none !important;
 }
 #studioPanel .tabitem { padding: 20px 0 0 !important; border: 0 !important; }
 #studioPanel .form, #playerPanel .form,
@@ -256,12 +257,73 @@ main { min-height: 0 !important; padding: 0 !important; max-height: none !import
   text-shadow: none !important; backdrop-filter: blur(var(--glass-blur));
 }
 footer { display: none !important; }
-@media(max-width: 640px) {
-  main { padding: 12px !important; }
-  .gradio-container .aj-header { gap: 16px; flex-wrap: wrap; padding-bottom: 20px; margin-bottom: 20px; }
-  #studioPanel, #playerPanel { padding: 16px !important; gap: 16px; }
-  .gradio-container .tab-nav { gap: 12px; }
-  .gradio-container button.secondary { min-height: 44px; }
+/* === THREE-PANEL LAYOUT OVERRIDES === */
+.gradio-container > .main { max-width: 100% !important; width: 100% !important; }
+.gradio-row { gap: 16px !important; align-stretch: stretch; }
+.gradio-column { min-width: 0 !important; }
+
+/* Section titles — violet accent, compact */
+.aj-heading { color: var(--aj-accent-bright) !important; font-size: 11px !important; font-weight: 700 !important; letter-spacing: 0.08em !important; text-transform: uppercase !important; display: block !important; margin: 0 0 10px !important; }
+.aj-section-title { margin: 12px 0 8px !important; padding: 0 !important; line-height: 1 !important; }
+
+/* Panel containers — lighter navy on midnight background (exclude studio/player inner groups) */
+.gradio-group:not(#studioPanel .gradio-group):not(#playerPanel .gradio-group), .gradio-radio, .gradio-slider, .gradio-checkbox, .gradio-number, .gradio-textbox, .gradio-dropdown { background: rgba(30, 34, 62, 0.5) !important; border-color: var(--aj-line) !important; }
+[data-theme="light"] .gradio-group:not(#studioPanel .gradio-group):not(#playerPanel .gradio-group), [data-theme="light"] .gradio-radio, [data-theme="light"] .gradio-slider, [data-theme="light"] .gradio-checkbox, [data-theme="light"] .gradio-number, [data-theme="light"] .gradio-textbox, [data-theme="light"] .gradio-dropdown { background: rgba(255, 255, 255, 0.6) !important; }
+
+/* Studio/player panels — no inner group borders or shadows */
+#studioPanel .gradio-group, #studioPanel .group, #playerPanel .gradio-group, #playerPanel .group { border: none !important; box-shadow: none !important; background: transparent !important; outline: none !important; }
+
+/* Studio/player panels — single border via parent rules */
+
+
+/* Divider lines between sections */
+.aj-divider { border: none !important; height: 1px !important; background: var(--aj-line) !important; margin: 14px 0 !important; }
+
+/* Generate button — vibrant gradient */
+.aj-gen-btn { background: linear-gradient(135deg, #8b5cf6, #a78bfa) !important; color: #fff !important; font-weight: 700 !important; border: none !important; box-shadow: 0 2px 16px rgba(139, 92, 246, 0.35) !important; min-height: 48px !important; }
+.aj-gen-btn:hover { background: linear-gradient(135deg, #a78bfa, #c4b5fd) !important; box-shadow: 0 4px 24px rgba(139, 92, 246, 0.5) !important; transform: translateY(-1px); }
+
+/* Queue panel — flat list */
+#queuePanel { max-height: 260px; overflow-y: auto !important; background: transparent !important; border: 0 !important; padding: 4px 0 !important; }
+
+/* Now playing cover — rounded card */
+#nowCover img { border-radius: 10px !important; box-shadow: 0 4px 24px rgba(0,0,0,0.3) !important; }
+
+/* Library gallery — tight compact 2-col */
+#libraryGallery { max-height: 280px; }
+#libraryGallery .thumbnail-item { border-radius: 8px !important; }
+
+/* Theme toggle — compact circular icon button */
+.aj-theme-btn, #themeToggle { width: 40px !important; height: 40px !important; padding: 0 !important; border-radius: 50% !important; display: inline-flex !important; align-items: center !important; justify-content: center !important; font-size: 20px !important; min-width: 0 !important; cursor: pointer !important; transition: all 0.2s ease !important; }
+[data-theme="dark"] .aj-theme-btn, [data-theme="dark"] #themeToggle { background: rgba(139, 92, 246, 0.15) !important; color: #e2e8f0 !important; border: 1px solid rgba(139, 92, 246, 0.3) !important; }
+[data-theme="dark"] .aj-theme-btn:hover, [data-theme="dark"] #themeToggle:hover { background: rgba(139, 92, 246, 0.3) !important; transform: scale(1.1); }
+[data-theme="light"] .aj-theme-btn, [data-theme="light"] #themeToggle { background: rgba(139, 92, 246, 0.1) !important; color: #7c3aed !important; border: 1px solid rgba(124, 58, 237, 0.2) !important; }
+[data-theme="light"] .aj-theme-btn:hover, [data-theme="light"] #themeToggle:hover { background: rgba(139, 92, 246, 0.2) !important; transform: scale(1.1); }
+
+/* Header — tighter */
+.gradio-container .aj-header { padding: 6px 0 14px !important; margin: 0 !important; border: 0 !important; display: flex !important; align-items: center !important; justify-content: space-between !important; }
+.aj-header .aj-eyebrow { color: var(--aj-coral) !important; font-size: 10px !important; letter-spacing: 0.12em !important; text-transform: uppercase !important; margin: 0 !important; font-weight: 600 !important; }
+#mainTitle { font-size: 22px !important; font-weight: 700 !important; margin: 0 !important; color: var(--aj-text) !important; }
+#mainDesc { font-size: 11px !important; color: var(--aj-muted) !important; margin: 1px 0 0 !important; }
+
+/* Play/skip buttons — modern style */
+.aj-play-btn { background: linear-gradient(135deg, #8b5cf6, #6d28d9) !important; color: #fff !important; font-weight: 700 !important; border: none !important; box-shadow: 0 2px 12px rgba(139, 92, 246, 0.3) !important; }
+.aj-play-btn:hover { background: linear-gradient(135deg, #a78bfa, #7c3aed) !important; box-shadow: 0 4px 20px rgba(139, 92, 246, 0.4) !important; transform: translateY(-1px); }
+.aj-skip-btn { background: var(--aj-input) !important; color: var(--aj-text) !important; border: 1px solid var(--aj-line) !important; font-weight: 600 !important; }
+.aj-skip-btn:hover { background: var(--aj-hover) !important; }
+
+/* Player label — prominent */
+.aj-player-label { color: var(--aj-text) !important; font-size: 13px !important; line-height: 1.5 !important; margin: 8px 0 !important; font-weight: 500 !important; }
+
+/* Lyrics section — collapsible detail */
+#lyricsSection { margin: 6px 0 !important; }
+#lyricsSection summary { cursor: pointer; font-size: 12px; color: #a78bfa; font-weight: 600; }
+#lyricsSection p { color: var(--aj-text) !important; font-size: 12px !important; white-space: pre-line !important; margin: 6px 0 0 !important; padding: 8px !important; background: rgba(0,0,0,0.2) !important; border-radius: 8px !important; line-height: 1.5 !important; }
+
+/* Narrow-screen stacking — columns go vertical */
+@media (max-width: 1024px) {
+  .gradio-row { flex-direction: column !important; }
+  .gradio-column { width: 100% !important; min-width: 0 !important; }
 }
 """
 
@@ -270,7 +332,7 @@ from pathlib import Path
 CUSTOM_CSS += Path(__file__).with_name("workspace.css").read_text(encoding="utf-8")
 
 THEME_JS = """
-() => {
+(function() {
   const root = document.documentElement;
   function apply(theme) {
     root.dataset.theme = theme;
@@ -280,10 +342,7 @@ THEME_JS = """
     document.querySelectorAll('.gradio-container').forEach(el => el.classList.toggle('dark', theme === 'dark'));
     const btn = document.getElementById('themeToggle');
     if (btn) {
-      // Action wording: the button always says what it DOES (switch modes),
-      // never the name of the current mode — unambiguous in both themes.
       const label = theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode';
-      if (btn.textContent !== label) btn.textContent = label;
       btn.title = label;
       btn.setAttribute('aria-label', label);
       btn.setAttribute('aria-pressed', String(theme === 'light'));
@@ -305,4 +364,38 @@ THEME_JS = """
   window.__ajThemeObserver = new MutationObserver(() => apply(root.dataset.theme || 'dark'));
   window.__ajThemeObserver.observe(document.body, {childList:true, subtree:true});
 }
+})();
 """
+
+
+DOM_WRAP_JS = """
+(() => {
+  const nowCover = document.getElementById("nowCover");
+  if (nowCover && !document.getElementById("playerPanel")) {
+    const panel = document.createElement("div");
+    panel.id = "playerPanel";
+    let parent = nowCover.parentElement;
+    if (parent) {
+      let collected = [];
+      let foundCover = false;
+      for (let i = 0; i < parent.children.length; i++) {
+        let child = parent.children[i];
+        if (child.id === "nowCover") foundCover = true;
+        if (foundCover && child.id !== "nowCover") {
+          // Stop at queue panel or any element containing hr.aj-divider
+          if (child.id === "queuePanel") break;
+          let hasDivider = child.classList.contains("aj-divider") ||
+              (child.querySelector && child.querySelector("hr.aj-divider"));
+          if (hasDivider) break;
+          collected.push(child);
+        }
+      }
+      collected.forEach(el => panel.appendChild(el));
+      parent.insertBefore(panel, nowCover);
+    }
+  }
+  // Ensure libraryGallery dimensions
+  const lg = document.getElementById("libraryGallery");
+  if (lg) { lg.style.width = "100%"; lg.style.maxWidth = "280px"; }
+}
+)()"""
