@@ -65,6 +65,41 @@ Configuration comes from environment variables or the gitignored `.env`.
 The app fails fast at startup if `LLM_API_KEY` is missing. Base URLs default
 to the class endpoints and can be overridden per service (see `.env.example`).
 
+## Sample songs
+
+`samples/` holds ready-to-play songs that ship with the repository (they
+must appear in the submission ZIP, unlike generated songs in the gitignored
+`data/`):
+
+```
+samples/
+  audio/         sample MP3s
+  covers/        sample cover PNGs
+  samples.json   manifest: id, title, style, mood, duration_sec,
+                 instrumental, theme, lyrics, created_by, cover_prompt,
+                 and the audio/cover filenames
+```
+
+At startup the app registers every sample in `samples.json` that is not
+already in the library — matched by its fixed id, pointing at the files in
+place. Nothing is copied into `data/`, and restarting never duplicates a
+sample. Samples whose audio or cover file is missing are skipped with a
+logged warning, and deleting a sample from the Library tab removes only the
+library entry, never the files in `samples/`.
+
+To turn a locally generated song into a sample:
+
+```bash
+python scripts/add_sample.py "<song id or title>"
+```
+
+The script looks the song up in `data/library.json` (id, exact title, or a
+unique title match), copies its MP3 and cover into `samples/`, and appends
+its metadata to `samples.json`. Only the song's own audio and cover are
+copied — voice references, DJ clips, and everything else in `data/` are
+never touched. Re-running it for the same song replaces the existing entry
+in place. Commit `samples/` afterwards so the sample ships in the ZIP.
+
 ## Class services used
 
 | Port | Service | Job in this app |
@@ -86,6 +121,9 @@ jukebox/
   prompts.py            # prompt contracts (all-original content rules)
   service.py            # pipelines: draft, compose, cover, DJ, voice validation
   library.py            # song library with JSON persistence
+  samples.py            # bundled sample loading from samples/ (tracked in git)
+samples/                # ready-to-play sample songs (audio/, covers/, samples.json)
+scripts/add_sample.py   # turn a generated song into a bundled sample
 scripts/smoke_test.py   # end-to-end sanity checks against the live services
 ```
 
