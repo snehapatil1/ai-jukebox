@@ -701,10 +701,8 @@ def on_voice_upload(filepath: str | None, voice_state: dict):
     if not ok:
         return f"❌ {msg}", gr.update(interactive=False), gr.update(value=None), voice_state
     src = Path(filepath)
-    # _convert_to_wav replaces the original with a .wav copy; use that for storage
-    actual_path = src.with_suffix(".wav") if src.suffix.lower() not in service.VALID_VOICE_EXTS else src
-    dest = config.VOICE_DIR / f"voice_{clients.new_filename(actual_path.suffix)}"
-    shutil.copy2(actual_path, dest)
+    dest = config.VOICE_DIR / f"voice_{clients.new_filename(src.suffix)}"
+    shutil.copy2(src, dest)
     new_state = {"path": str(dest), "name": src.name}
     return (
         f"✅ Custom DJ voice ready: *{src.name}* ({msg}) — voice cloning enabled.",
@@ -786,7 +784,7 @@ def build_app() -> gr.Blocks:
                     gen_status = gr.HTML('', elem_id="genStatusBox")
                     gen_result = gr.Markdown('')
                 with gr.Accordion("DJ voice settings", open=False):
-                    voice_upload = gr.Audio(type="filepath", label="Custom DJ voice (optional MP3, WAV, or M4A)", sources=["upload"])
+                    voice_upload = gr.Audio(type="filepath", label="Custom DJ voice (MP3 or WAV)", sources=["upload"])
                     voice_status = gr.Markdown("Using default bundled DJ voice.")
                     remove_voice_btn = gr.Button("Remove custom voice", interactive=False, variant="secondary")
             with gr.Tab("Library", id="library"):

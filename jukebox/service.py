@@ -308,7 +308,6 @@ def render_dj_clip(text: str, voice_ref: Path | None = None) -> bytes:
 # 5. Custom-voice validation
 # ---------------------------------------------------------------------------
 VALID_VOICE_EXTS = {".mp3", ".wav"}
-CONVERTIBLE_VOICE_EXTS = {".m4a", ".aac", ".ogg", ".flac", ".wma"}
 
 
 def _find_ffprobe() -> str | None:
@@ -357,48 +356,8 @@ def _check_voice_duration(path: Path) -> tuple[bool, str]:
         return True, ""  # ffprobe failed — skip gracefully
 
 
-def _convert_to_wav(src_path: Path) -> tuple[bool, str]:
-    """Convert a non-MP3/WAV audio file (e.g. .m4a) to WAV via ffmpeg.
-
-    Returns (ok, error_msg). If ok is True, src_path has been replaced with a
-    WAV copy and the caller should validate that new path.
-    """
-    ext = src_path.suffix.lower()
-    if ext not in CONVERTIBLE_VOICE_EXTS:
-        return False, f"Format '{ext}' cannot be converted — only MP3 or WAV voice files work."
-
-    wav_path = src_path.with_suffix(".wav")
-
-    for candidate in ("ffmpeg", "ffprobe"):
-        try:
-            subprocess.run([candidate, "-version"], capture_output=True, timeout=5)
-            bin_name = candidate
-            break
-        except (FileNotFoundError, subprocess.TimeoutExpired):
-            continue
-    else:
-        return False, "ffmpeg is not installed on this system. Export your voice memo as MP3 or WAV first."
-
-    try:
-        subprocess.run(
-            [bin_name, "-hide_banner", "-y", "-i", str(src_path), str(wav_path)],
-            capture_output=True, text=True, timeout=60,
-        )
-        if not wav_path.exists() or wav_path.stat().st_size < 100:
-            return False, "Conversion produced an empty file — try exporting your recording as MP3 or WAV."
-        # Replace the original with the WAV version so subsequent validation uses it
-        src_path.unlink(missing_ok=True)
-        return True, ""
-    except subprocess.TimeoutExpired:
-        wav_path.unlink(missing_ok=True)
-        return False, "Conversion timed out — your file may be too large; export as MP3 or WAV instead."
-    except Exception as exc:
-        wav_path.unlink(missing_ok=True)
-        return False, f"Conversion failed ({exc}) — export your recording as MP3 or WAV first."
-
-
 def validate_voice_file(path: str) -> tuple[bool, str]:
-    """Check extension, convert if needed, and size for a user voice reference."""
+    """Check extension and size for a user voice reference (MP3/WAV only)."""
     p = Path(path)
     ext = p.suffix.lower()
 
@@ -417,28 +376,8 @@ def validate_voice_file(path: str) -> tuple[bool, str]:
             return False, dur_msg
         return True, f"{size / (1024 * 1024):.1f} MB"
 
-    # Convertible but needs conversion (e.g. .m4a)
-    if ext in CONVERTIBLE_VOICE_EXTS:
-        ok, err = _convert_to_wav(p)
-        if not ok:
-            return False, err
-        # Validate the newly created WAV
-        wav_p = p.with_suffix(".wav")
-        size = wav_p.stat().st_size
-        if size <= 0:
-            return False, "The uploaded voice reference is empty after conversion."
-        if size > config.VOICE_MAX_BYTES:
-            return False, (
-                f"Voice reference is {size / (1024 * 1024):.1f} MB — the limit is "
-                f"{config.VOICE_MAX_BYTES / (1024 * 1024):.0f} MB."
-            )
-        ok, dur_msg = _check_voice_duration(wav_p)
-        if not ok:
-            return False, dur_msg
-        return True, f"Converted from {ext} → WAV ({size / (1024 * 1024):.1f} MB)"
-
     # Unsupported format entirely
-    return False, f"'{ext}' is not a supported format. Only MP3 or WAV voice files work (iPhone Voice Memos are .m4a — export or convert them first)."
+    return False, f"'{ext}' is not a supported format. Only MP3 or WAV voice files work."
 
 
 # ---------------------------------------------------------------------------

@@ -31,8 +31,7 @@ for the full step log and test evidence.
 
    **DJ Voice:** By default the bundled Chatterbox voice is used automatically.
    To customize the DJ's voice, upload a short audio recording as a reference.
-   Supported formats: MP3, WAV, and M4A (the app converts .m4a to WAV behind
-   the scenes). If conversion or usage fails, the DJ falls back to the default
+   Supported formats: MP3 and WAV. If usage fails, the DJ falls back to the default
    voice and displays a notice. The voice reference must be 3–60 seconds long;
    shorter or longer files are rejected. Recorded references are stored only in
    the gitignored `data/voice_refs/` directory and can be removed at any time.
@@ -126,8 +125,8 @@ test harness; manual tests were run through the live Gradio app.
 | Skip during DJ speech | Jump to next song without overlap | Jumped to next song, no overlapping audio | Verified |
 | Custom voice, MP3 (user recording) | DJ uses user's voice clone | DJ sounded like the user | Verified |
 | Custom voice, WAV (user recording) | DJ uses user's voice clone | DJ sounded like the user | Verified |
-| Custom voice, .m4a (iPhone Voice Memo) | Converted to WAV and used, or clear error message | File accepted, auto-converted to WAV, DJ used custom voice | Fixed (v2) |
-| Unsupported format (.txt) dragged onto voice box | Clear warning: only MP3/WAV/M4A accepted | Clear warning displayed | Verified |
+| Custom voice, .m4a (iPhone Voice Memo) | Rejected — not a supported format | Clear error displayed | Verified |
+| Unsupported format (.txt) dragged onto voice box | Clear warning: only MP3 or WAV accepted | Clear warning displayed | Verified |
 | Invalid voice reference (~2 s short) | Rejected with "must be 3–60 seconds" message | Rejected, clear error shown | Script verified |
 | Invalid voice reference (~65 s long) | Rejected with "must be 3–60 seconds" message | Rejected, clear error shown | Script verified |
 | Custom voice engine failure (invalid/non-speech audio) | Fall back to default voice, show gr.Warning | Fallback triggered on any exception, gr.Warning displayed | Verified |
@@ -144,10 +143,4 @@ test harness; manual tests were run through the live Gradio app.
   verse's worth of singing and the rest plays instrumentally — lyrics are
   shown in full but only a short prefix is sung. We recommend 30 s or more for
   tracks where you want clear vocals. Longer tracks (30 s+) sing most or all of
-  the text, and the engine may still drop an occasional line or section;
-  instrumental tracks are unaffected.
-
-- **DJ voice conversion requires ffmpeg installed.** iPhone Voice Memos (.m4a)
-  are auto-converted to WAV, but only if ffmpeg is on your system PATH. If
-  ffmpeg is missing, uploading an .m4a shows a clear error asking you to export
-  the recording as MP3 or WAV first.
+  the text, and the engine may still drop an occasional line or section; instrumental tracks are unaffected.
