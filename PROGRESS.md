@@ -134,3 +134,29 @@ the repeatable checks):
   (HTTP 200, stale pre-session instance on the port was stopped first).
   `data/dj-test-clips/` removed.
 - Local commit on branch `maddie` only — nothing pushed.
+
+## Step 7 — Fix: queue items no longer autoplay (issue #9)
+- **Symptom (user report):** after Play all, each next item (song or DJ clip)
+  loaded but stayed paused; manual play worked per item.
+- **Root cause (static analysis + live browser repro):** Gradio 6.30's Audio
+  component sets `audio.autoplay` ONCE at mount (the component is declared
+  `autoplay=False`), and on value updates it only assigns `el.src = value` —
+  it never calls `play()`. The app's `gr.update(value=..., autoplay=True)`
+  therefore has no effect: `play()` is never invoked for the next queue item.
+  Confirmed empirically at HEAD: zero `play()` calls across a full queue run
+  (browser instrumentation), first song stayed paused after Play all.
+- **Fix (`jukebox/theme_js.js`, playback module):** when the main player's
+  audio source changes after the user has started a session (Play all / Next
+  track / any play on the player), call `play()` on the new source and ignore
+  a rejected promise (autoplay policy). `userStarted` is set by the existing
+  click/play hooks, so the initial paused load is untouched. Meaghan's
+  mutual-exclusion pause and waveform fitting are unchanged.
+- **Verified:** `node --check` clean; `pytest tests/` — 39 passed + 8 subtests
+  (no Python changes). User re-tests in a real browser.
+- **Environment finding (needs the user's check):** no `ffprobe`/`ffmpeg` is
+  present on this machine (`which ffprobe` empty, no `/opt/homebrew`), and
+  Gradio 6.30's audio postprocess REQUIRES ffprobe for any audio value — the
+  app shows "Executable 'ffprobe' not found" for every player update here.
+  README lists ffmpeg as a system requirement; reinstall it before the next
+  local run (`brew install ffmpeg` or put ffprobe on PATH).
+- Local commit on branch `maddie` only — nothing pushed.
