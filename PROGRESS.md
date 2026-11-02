@@ -107,3 +107,30 @@ the repeatable checks):
   user's go-ahead** (the branch is already pushed; PR #1 was auto-created
   before the user asked to hold off).
 - Test songs were removed after every verification run; the library is clean.
+
+## Step 6 — DJ character picker (issue #9)
+- Replaced the "DJ options — Coming soon" placeholder with a single picker in
+  the Library player panel: **Off / Classic radio (default) / Late-night
+  chill / Party hype**, plus one hint line pointing at the Create-tab voice
+  upload (the upload itself was NOT moved; layout/styling untouched).
+- Character definitions live in `jukebox/prompts.py` (`DJ_CHARACTERS`): each
+  character's persona text is injected into the DJ system prompt (existing
+  rules kept — 2–3 sentences, both songs named, no markdown) and its
+  `speed`/`exaggeration` pass through `clients.speak` to Chatterbox:
+  Classic 1.0/0.7, Chill 0.9/0.3, Hype 1.15/1.5 (inside the server's accepted
+  ranges: speed 0.25–4.0, exaggeration ≥ 0).
+- **Off**: songs play back to back — no commentary and no DJ prefetch (early
+  returns in `advance` and `_spawn_prefetch`).
+- The character is part of the DJ cache key `(prev_id, nxt_id, voice,
+  character)`, so switching characters always generates fresh commentary.
+  Custom voices keep working — the character only changes personality/pace/
+  energy, never the voice (only the bundled default or the user's upload is
+  ever sent; no `voice` field in TTS requests).
+- Verified: `py_compile` clean on app.py + jukebox/*.py; `pytest tests/` — 39
+  passed + 8 subtests (new `tests/test_dj_characters.py` covers registry
+  values, persona injection, speak() request body, character-scoped cache
+  key, and the Off path; `test_brand_mark.py` replaces its old placeholder
+  assertion, now asserting the real picker); app launched on 127.0.0.1:7860
+  (HTTP 200, stale pre-session instance on the port was stopped first).
+  `data/dj-test-clips/` removed.
+- Local commit on branch `maddie` only — nothing pushed.

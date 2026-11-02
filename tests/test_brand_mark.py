@@ -12,11 +12,21 @@ class BrandMarkTests(unittest.TestCase):
         self.assertNotIn('▂▆█▅▂',header)
         self.assertLess(header.index('class="aj-logo"'),header.index('id="mainTitle"'))
 
-    def test_library_reserves_space_for_teammates_dj_controls(self):
-        demo=app.build_app()
-        components=demo.config['components']
-        self.assertTrue(any(c['props'].get('elem_id')=='djOptionsPanel' for c in components))
-        self.assertTrue(any('DJ options' in c['props'].get('value','') for c in components if c['type']=='markdown'))
-        self.assertTrue(any('Coming soon.' in c['props'].get('value','') for c in components if c['type']=='markdown'))
+    def test_dj_options_offer_the_character_picker(self):
+        demo = app.build_app()
+        components = demo.config['components']
+        self.assertTrue(any(c['props'].get('elem_id') == 'djOptionsPanel' for c in components))
+        markdown_values = [c['props'].get('value', '') for c in components if c['type'] == 'markdown']
+        self.assertTrue(any('DJ options' in v for v in markdown_values))
+        self.assertFalse(any('Coming soon.' in v for v in markdown_values),
+                         'The coming-soon placeholder must be replaced by the real picker')
+        radios = [c for c in components if c['type'] == 'radio' and c['props'].get('label') == 'DJ character']
+        self.assertEqual(len(radios), 1)
+        choices = radios[0]['props']['choices']
+        self.assertEqual([c[0] for c in choices],
+                         ['Off', 'Classic radio', 'Late-night chill', 'Party hype'])
+        self.assertEqual(radios[0]['props']['value'], 'classic')
+        hint = next(v for v in markdown_values if 'each character changes personality' in v)
+        self.assertIn('Upload a custom voice in the Create tab.', hint)
 
 if __name__=='__main__': unittest.main()
