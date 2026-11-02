@@ -125,7 +125,7 @@ test harness; manual tests were run through the live Gradio app.
 | Skip during DJ speech | Jump to next song without overlap | Jumped to next song, no overlapping audio | Verified |
 | Custom voice, MP3 (user recording) | DJ uses user's voice clone | DJ sounded like the user | Verified |
 | Custom voice, WAV (user recording) | DJ uses user's voice clone | DJ sounded like the user | Verified |
-| Custom voice, .m4a (iPhone Voice Memo) | Rejected — not a supported format | Clear error displayed | Verified |
+| Custom voice, .m4a (iPhone Voice Memo) | Rejected — not a supported format | File picker allows .m4a, but nothing happens — no file shown, no error. Known issue; use MP3 or WAV. | Known issue |
 | Unsupported format (.txt) dragged onto voice box | Clear warning: only MP3 or WAV accepted | Clear warning displayed | Verified |
 | Invalid voice reference (~2 s short) | Rejected with "must be 3–60 seconds" message | Rejected, clear error shown | Script verified |
 | Invalid voice reference (~65 s long) | Rejected with "must be 3–60 seconds" message | Rejected, clear error shown | Script verified |
