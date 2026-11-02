@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import logging
 import re
+import subprocess
 import threading
 from pathlib import Path
 
@@ -309,28 +310,92 @@ def render_dj_clip(text: str, voice_ref: Path | None = None) -> bytes:
 VALID_VOICE_EXTS = {".mp3", ".wav"}
 
 
+def _find_ffprobe() -> str | None:
+    """Try to locate ffprobe; return path or None if not available."""
+    for candidate in ("ffprobe", "ffmpeg"):
+        try:
+            subprocess.run([candidate, "-version"], capture_output=True, timeout=5)
+            return candidate
+        except (FileNotFoundError, subprocess.TimeoutExpired):
+            continue
+    return None
+
+
+FFPROBE_BIN = _find_ffprobe()
+
+
+def _check_voice_duration(path: Path) -> tuple[bool, str]:
+    """Return (ok, message) after checking voice file duration with ffprobe/ffmpeg.
+    
+    Rejects references longer than 60 seconds or shorter than 3 seconds.
+    Skips the check entirely if ffprobe is not installed.
+    """
+    if FFPROBE_BIN is None:
+        return True, ""  # ffprobe missing — skip gracefully
+    
+    try:
+        import re as _re
+        result = subprocess.run(
+            [FFPROBE_BIN, "-hide_banner", "-i", str(path)],
+            capture_output=True, text=True, timeout=10,
+        )
+        # Duration appears in stderr as "Duration: HH:MM:SS.mmm"
+        stderr = result.stderr.lower()
+        m = _re.search(r"duration:\s*(\d+):(\d+):(\d+)\.(\d+)", stderr)
+        if m:
+            total_sec = int(m.group(1)) * 3600 + int(m.group(2)) * 60 + int(m.group(3)) + int(m.group(4)) / 1000
+        else:
+            return True, ""  # can't parse — don't block
+        
+        if total_sec > 60:
+            return False, "Voice reference must be between 3 and 60 seconds long."
+        if total_sec < 3:
+            return False, "Voice reference must be between 3 and 60 seconds long."
+        return True, ""
+    except (subprocess.SubprocessError, FileNotFoundError, ValueError):
+        return True, ""  # ffprobe failed — skip gracefully
+
+
 def validate_voice_file(path: str) -> tuple[bool, str]:
     """Check extension and size for a user voice reference (MP3/WAV only)."""
     p = Path(path)
-    if p.suffix.lower() not in VALID_VOICE_EXTS:
-        return False, "Voice reference must be an MP3 or WAV file."
-    size = p.stat().st_size
-    if size <= 0:
-        return False, "The uploaded voice reference is empty."
-    if size > config.VOICE_MAX_BYTES:
-        return False, (
-            f"Voice reference is {size / 1e6:.1f} MB — the limit is "
-            f"{config.VOICE_MAX_BYTES / 1e6:.0f} MB."
-        )
-    return True, f"{size / 1e6:.1f} MB"
+    ext = p.suffix.lower()
+
+    # Already a supported format — just validate
+    if ext in VALID_VOICE_EXTS:
+        size = p.stat().st_size
+        if size <= 0:
+            return False, "The uploaded voice reference is empty."
+        if size > config.VOICE_MAX_BYTES:
+            return False, (
+                f"Voice reference is {size / (1024 * 1024):.1f} MB — the limit is "
+                f"{config.VOICE_MAX_BYTES / (1024 * 1024):.0f} MB."
+            )
+        ok, dur_msg = _check_voice_duration(p)
+        if not ok:
+            return False, dur_msg
+        return True, f"{size / (1024 * 1024):.1f} MB"
+
+    # Unsupported format entirely
+    return False, f"'{ext}' is not a supported format. Only MP3 or WAV voice files work."
 
 
 # ---------------------------------------------------------------------------
-# 6. Prefetched DJ clips, cached per song pair for the session
+# 6. Prefetched DJ clips, cached per (song pair, voice) for the session
 # ---------------------------------------------------------------------------
 _DJ_CACHE: dict[tuple, dict] = {}   # (prev_id, nxt_id, voice_fp) -> {"clip": rel-or-"", "text": str}
 _DJ_EVENTS: dict[tuple, threading.Event] = {}
 _DJ_LOCK = threading.Lock()
+
+
+def _dj_key(prev: Song, nxt: Song, voice_fp: str) -> tuple:
+    return (prev.id, nxt.id, voice_fp)
+
+
+def dj_cache_entry(prev: Song, nxt: Song, voice_fp: str) -> dict:
+    """Read-only view of the cached result for (prev -> nxt, voice)."""
+    with _DJ_LOCK:
+        return dict(_DJ_CACHE.get(_dj_key(prev, nxt, voice_fp), {}) or {})
 
 
 def prefetch_dj_clip(prev: Song, nxt: Song, voice_fp: str, voice_ref: Path | None) -> None:
@@ -338,7 +403,7 @@ def prefetch_dj_clip(prev: Song, nxt: Song, voice_fp: str, voice_ref: Path | Non
 
     Safe to call repeatedly: one generation per (pair, voice) per session.
     """
-    key = (prev.id, nxt.id, voice_fp)
+    key = _dj_key(prev, nxt, voice_fp)
     with _DJ_LOCK:
         if key in _DJ_CACHE or key in _DJ_EVENTS:
             return
@@ -349,19 +414,34 @@ def prefetch_dj_clip(prev: Song, nxt: Song, voice_fp: str, voice_ref: Path | Non
     ).start()
 
 
-def _dj_worker(key: tuple, prev: Song, nxt: Song, voice_ref: Path | None, event: threading.Event) -> None:
+def _dj_worker(key: tuple, prev: Song, nxt: Song, voice_ref: Path | None,
+               event: threading.Event) -> None:
     result = {"clip": "", "text": ""}
+    error_reason = ""
     try:
         text = dj_commentary(prev, nxt)
         audio = render_dj_clip(text, voice_ref)
         path = config.DJ_DIR / clients.new_filename(".mp3")
         path.write_bytes(audio)
         result = {"clip": str(path.relative_to(config.ROOT)), "text": text}
-    except Exception as exc:  # noqa: BLE001 - any failure just skips the commentary
+    except Exception as exc:  # noqa: BLE001
         log.warning("DJ prefetch failed for pair %s: %s", key[:2], exc)
+        if voice_ref is not None:
+            # Custom voice was requested — fall back to default voice on any failure
+            log.info("Custom voice rendering failed — falling back to default voice for %s -> %s", key[0][:8], key[1][:8])
+            try:
+                text = dj_commentary(prev, nxt)
+                audio = render_dj_clip(text, voice_ref=None)
+                path = config.DJ_DIR / clients.new_filename(".mp3")
+                path.write_bytes(audio)
+                result = {"clip": str(path.relative_to(config.ROOT)), "text": text, "_fallback": True}
+            except Exception as retry_exc:
+                error_reason = f"Fallback also failed: {retry_exc}"
+        else:
+            error_reason = str(exc)[:200]
     finally:
         with _DJ_LOCK:
-            _DJ_CACHE[key] = result
+            _DJ_CACHE[key] = {**result, "_error": error_reason}
         event.set()
 
 
@@ -371,18 +451,22 @@ def wait_dj_clip(
     voice_fp: str,
     voice_ref: Path | None,
     timeout: float = config.DJ_WAIT_FOR_PREFETCH,
-) -> tuple[Path | None, str | None]:
-    """Wait for the prefetched clip; returns (path, text) or (None, None).
+) -> tuple[Path | None, str | None, str]:
+    """Wait for the prefetched clip; returns (path, text, error_reason).
 
-    Registers a prefetch if none is in flight (e.g. the queue was edited).
+    * error_reason == ''           → success (clip is valid path)
+    * error_reason == 'voice'      → custom voice rejected; fallback succeeded
+    * error_reason == 'service'    → service unavailable / generic failure
+    Returns (None, None, reason) on complete failure.
     """
-    key = (prev.id, nxt.id, voice_fp)
+    key = _dj_key(prev, nxt, voice_fp)
     with _DJ_LOCK:
         cached = _DJ_CACHE.get(key)
         if cached is not None:
-            if not cached.get("clip"):
-                return None, None
-            return config.ROOT / cached["clip"], cached.get("text")
+            clip_path = cached.get("clip")
+            if not clip_path:
+                return None, None, "service"
+            return config.ROOT / clip_path, cached.get("text"), ""
         event = _DJ_EVENTS.get(key)
         if event is None:
             event = threading.Event()
@@ -393,6 +477,13 @@ def wait_dj_clip(
     event.wait(timeout=timeout)
     with _DJ_LOCK:
         cached = _DJ_CACHE.get(key)
-    if cached is None or not cached.get("clip"):
-        return None, None
-    return config.ROOT / cached["clip"], cached.get("text")
+    if cached is None:
+        return None, None, "service"
+    clip_path = cached.get("clip")
+    if not clip_path:
+        reason = "voice" if "_fallback" in cached else "service"
+        return None, None, reason
+    # Fallback succeeded — custom voice was rejected but default voice produced a clip
+    if cached.get("_fallback"):
+        return config.ROOT / clip_path, cached.get("text"), "voice"
+    return config.ROOT / clip_path, cached.get("text"), ""

@@ -39,6 +39,8 @@
   window.__ajPlaybackInstalled = true;
   var tracked = new Set();
   var active = null;
+  var userStarted = false;  // playback session begun by the user (Play all / Play / Next track)
+  var activeSrc = null;     // last src the active element was asked to play
   function inspect(root, media) {
     root.querySelectorAll("audio[src]").forEach(function (audio) { media.push(audio); });
     root.querySelectorAll("*").forEach(function (node) {
@@ -52,7 +54,7 @@
     var wrapper = root.querySelector('.wrapper');
     if (!wrapper || !root.querySelector('.canvases')) return;
     var width = host.getBoundingClientRect().width;
-    var sourceWidth = wrapper.style.width.endsWith('px') ? parseFloat(wrapper.style.width) : width;
+    var sourceWidth = width;
     if (!width || !sourceWidth) return;
     host.style.setProperty('--aj-wave-source-width', sourceWidth + 'px');
     host.style.setProperty('--aj-wave-scale', String(width / sourceWidth));
@@ -73,16 +75,33 @@
     var next = media[media.length - 1] || null;
     if (active && active !== next && !active.paused) active.pause();
     active = next;
+    if (next) {
+      var src = next.currentSrc || next.src;
+      if (src !== activeSrc) {
+        activeSrc = src;
+        // Gradio only swaps the src when the queue advances; it never calls
+        // play() (its autoplay option is fixed at component mount). Once the
+        // user has started a playback session, play each new item ourselves
+        // right after its source changes. A rejected play() promise (e.g.
+        // still blocked by autoplay policy) is ignored — the user can press
+        // play as usual.
+        if (userStarted && next.paused && !next.ended) {
+          next.play().catch(function () {});
+        }
+      }
+    }
     media.forEach(function (audio) {
       if (tracked.has(audio)) return;
       tracked.add(audio);
       audio.addEventListener('play', function () {
+        userStarted = true;
         tracked.forEach(function (other) { if (other !== audio && !other.paused) other.pause(); });
       });
     });
     tracked.forEach(function (audio) { if (!audio.isConnected && audio !== active) tracked.delete(audio); });
   }
   document.addEventListener('click', function (event) {
+    if (event.target.closest('#skipBtn')) userStarted = true;
     if (event.target.closest('#skipBtn, #libraryGallery .thumbnail-item')) {
       if (active && !active.paused) active.pause();
     }

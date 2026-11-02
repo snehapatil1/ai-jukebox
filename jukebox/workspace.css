@@ -129,7 +129,6 @@ html body .gradio-container #themeToggle:hover { background: var(--aj-hover) !im
 #coverStyle .wrap { display: grid !important; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px !important; }
 #coverStyle label { border-radius: 8px !important; background: var(--aj-input) !important; border: 1px solid var(--aj-line) !important; padding: 9px !important; }
 #coverStyle label.selected { border-color: var(--aj-accent) !important; background: var(--aj-selected) !important; }
-#jukeboxTabs #djOptionsPanel { padding: 16px !important; border: 1px dashed var(--aj-line) !important; border-radius: 12px !important; background: var(--aj-input) !important; }
 /* Explicit selection and theme affordances. */
 html body .gradio-container #themeToggle { width: 100px !important; min-width: 100px !important; max-width: 100px !important; flex-basis: 100px !important; gap: 6px; font-size: 14px !important; font-weight: 650; border-color: var(--aj-accent) !important; box-shadow: 0 0 14px rgba(133,86,255,.12) !important; }
 #coverStyle label:has(input:checked) { border: 2px solid var(--aj-accent) !important; background: var(--aj-selected) !important; box-shadow: 0 0 0 1px var(--aj-accent), 0 3px 12px rgba(133,86,255,.16) !important; font-weight: 700 !important; }
@@ -168,7 +167,6 @@ html body .gradio-container { padding: 16px !important; }
 #coverStyle .wrap { gap: 6px !important; }
 #coverArtStudio .aj-status-hint { font-size: 12px !important; line-height: 1.4 !important; }
 #coverStudioStatus { font-size: 13px !important; line-height: 1.4 !important; }
-#jukeboxTabs #djOptionsPanel { padding: 10px 12px !important; }
 @media (max-width:1000px) { #libraryGallery .grid-wrap { height: min(42vh, 340px) !important; } }
 
 #jukeboxTabs button.primary { background: #7d48ef !important; }

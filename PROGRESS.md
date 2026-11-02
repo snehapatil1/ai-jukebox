@@ -107,3 +107,123 @@ the repeatable checks):
   user's go-ahead** (the branch is already pushed; PR #1 was auto-created
   before the user asked to hold off).
 - Test songs were removed after every verification run; the library is clean.
+
+## Step 6 — Sample-song shipping (branch `maddie-samples`, from origin/master 913bbda)
+Ships the sample-song mechanism the assignment requires (three ready-to-play
+sample songs with titles + covers must be in the GitHub ZIP; generated songs
+stay in the gitignored `data/`). No songs generated, no class services called.
+
+- `samples/` (tracked; verified `git check-ignore` does NOT match it):
+  `audio/`, `covers/` (both with `.gitkeep` so the ZIP ships the structure),
+  and `samples.json` — currently `[]` by design; filled via the script below.
+- `jukebox/samples.py` — `load_samples()`: registers each manifest entry not
+  already in the library, matched by fixed id, pointing at files in place
+  (never copies into `data/`); entries with missing audio/cover are skipped
+  with a logged warning; re-running (restart) adds nothing → no duplicates.
+- `jukebox/library.py` — `SongLibrary.add(id=None, ...)` keeps an explicit id
+  (samples) while generated songs still get a fresh uuid; `delete()` now
+  refuses to unlink any file under `samples/` (logged "Keeping … sample
+  asset"), so deleting a sample in the app removes the library entry only.
+- `app.py` — calls `load_samples(LIBRARY)` after the library loads, and adds
+  `config.SAMPLES_DIR` to `launch(allowed_paths=...)` so sample covers/audio
+  stream through the `/gradio_api/file=` route.
+- `scripts/add_sample.py` — given a song id or title from `data/library.json`,
+  copies ONLY that song's MP3 + cover into `samples/` and appends its metadata
+  to `samples.json` (re-runs replace the entry in place). Refuses: missing
+  audio, missing cover, already-a-sample, unknown/ambiguous title.
+- Docs: README "Sample songs" section (folder explainer + script usage);
+  project-layout tree updated.
+
+Test evidence (`.venv/bin/python -m pytest tests/ -q`, Python 3.14.10):
+- `33 passed, 8 subtests passed` (4 new `tests/test_samples.py` groups:
+  load-in-place w/o data/ copies, no duplicates on restart, missing files
+  skipped with warning, delete keeps sample files, missing manifest no-op,
+  fixed-id add).
+- `scripts/add_sample.py` verified against a throwaway temp tree (never the
+  real data/): add by id, re-run updates in place (no duplicate ids), only
+  audio+cover copied (voice_refs/other data/ files untouched), refusals for
+  no-cover and unknown songs.
+- Launch smoke test: app booted on **127.0.0.1:7861** (user's app/port 7860
+  never touched) with static-ffmpeg ffprobe on PATH — `/config` returned
+  blocks title "AI Jukebox" (same readiness check `launcher.py` uses) and a
+  `/gradio_api/file=` URL under `samples/` returned HTTP 200 (allowed_paths
+  registration works); instance shut down, both ports clear afterwards.
+- Committed locally on `maddie-samples` only; `maddie` (PR #11) untouched;
+  no push, no PR.
+
+## Step 7 — DJ character picker (issue #9)
+- Replaced the "DJ options — Coming soon" placeholder with a single picker in
+  the Library player panel: **Off / Classic radio (default) / Late-night
+  chill / Party hype**, plus one hint line pointing at the Create-tab voice
+  upload (the upload itself was NOT moved; layout/styling untouched).
+- Character definitions live in `jukebox/prompts.py` (`DJ_CHARACTERS`): each
+  character's persona text is injected into the DJ system prompt (existing
+  rules kept — 2–3 sentences, both songs named, no markdown) and its
+  `speed`/`exaggeration` pass through `clients.speak` to Chatterbox:
+  Classic 1.0/0.7, Chill 0.9/0.3, Hype 1.15/1.5 (inside the server's accepted
+  ranges: speed 0.25–4.0, exaggeration ≥ 0).
+- **Off**: songs play back to back — no commentary and no DJ prefetch (early
+  returns in `advance` and `_spawn_prefetch`).
+- The character is part of the DJ cache key `(prev_id, nxt_id, voice,
+  character)`, so switching characters always generates fresh commentary.
+  Custom voices keep working — the character only changes personality/pace/
+  energy, never the voice (only the bundled default or the user's upload is
+  ever sent; no `voice` field in TTS requests).
+- Verified: `py_compile` clean on app.py + jukebox/*.py; `pytest tests/` — 39
+  passed + 8 subtests (new `tests/test_dj_characters.py` covers registry
+  values, persona injection, speak() request body, character-scoped cache
+  key, and the Off path; `test_brand_mark.py` replaces its old placeholder
+  assertion, now asserting the real picker); app launched on 127.0.0.1:7860
+  (HTTP 200, stale pre-session instance on the port was stopped first).
+  `data/dj-test-clips/` removed.
+- Local commit on branch `maddie` only — nothing pushed.
+
+## Step 8 — Fix: queue items no longer autoplay (issue #9)
+- **Symptom (user report):** after Play all, each next item (song or DJ clip)
+  loaded but stayed paused; manual play worked per item.
+- **Root cause (static analysis + live browser repro):** Gradio 6.30's Audio
+  component sets `audio.autoplay` ONCE at mount (the component is declared
+  `autoplay=False`), and on value updates it only assigns `el.src = value` —
+  it never calls `play()`. The app's `gr.update(value=..., autoplay=True)`
+  therefore has no effect: `play()` is never invoked for the next queue item.
+  Confirmed empirically at HEAD: zero `play()` calls across a full queue run
+  (browser instrumentation), first song stayed paused after Play all.
+- **Fix (`jukebox/theme_js.js`, playback module):** when the main player's
+  audio source changes after the user has started a session (Play all / Next
+  track / any play on the player), call `play()` on the new source and ignore
+  a rejected promise (autoplay policy). `userStarted` is set by the existing
+  click/play hooks, so the initial paused load is untouched. Meaghan's
+  mutual-exclusion pause and waveform fitting are unchanged.
+- **Verified:** `node --check` clean; `pytest tests/` — 39 passed + 8 subtests
+  (no Python changes). User re-tests in a real browser.
+- **Environment finding (needs the user's check):** no `ffprobe`/`ffmpeg` is
+  present on this machine (`which ffprobe` empty, no `/opt/homebrew`), and
+  Gradio 6.30's audio postprocess REQUIRES ffprobe for any audio value — the
+  app shows "Executable 'ffprobe' not found" for every player update here.
+  README lists ffmpeg as a system requirement; reinstall it before the next
+  local run (`brew install ffmpeg` or put ffprobe on PATH).
+- Local commit on branch `maddie` only — nothing pushed.
+
+## Step 9 — Simplify DJ options to a single on/off toggle (issue #9)
+- Replaced the character picker (Step 7) with one **"DJ between songs"**
+  toggle, **ON by default**. Off = songs play back to back with no DJ
+  commentary and no prefetch (the existing Off behavior is kept via early
+  returns in `advance` / `_spawn_prefetch`).
+- Character feature removed end to end: `DJ_CHARACTERS`/personas deleted from
+  `jukebox/prompts.py` (DJ_SYSTEM is back to the single warm, energetic DJ
+  personality), `speed`/`exaggeration` removed from `clients.speak` (default
+  `speed 1.0` restored), the character dropped from the DJ cache key (back to
+  `(prev_id, nxt_id, voice)`), `resolve_character` deleted.
+- Hint under the toggle: "Want the DJ to sound like you? Upload a custom
+  voice (MP3 or WAV) in the Create tab."
+- Panel restyled to match the neighboring sections: the `gr.Group` wrapper
+  and the placeholder-era dashed-box rules (`#jukeboxTabs #djOptionsPanel`)
+  in `jukebox/workspace.css` were removed; the section is now a plain
+  `### DJ options` heading + toggle + hint, like "Up next" — theme variables
+  only, so it reads correctly in both light and dark mode.
+- Tests: `tests/test_dj_characters.py` replaced by `tests/test_dj_toggle.py`
+  (single personality, speak() body, cache-key shape, toggle off/on
+  behavior); `test_brand_mark.py` now asserts the toggle and the absence of
+  the picker/placeholder box. `pytest tests/` — 34 passed + 8 subtests;
+  `py_compile` clean.
+- Local commit on branch `maddie` only — nothing pushed.

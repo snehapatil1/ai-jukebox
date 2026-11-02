@@ -27,6 +27,7 @@ import gradio as gr
 
 from jukebox import clients, config, service
 from jukebox.library import Song, SongLibrary
+from jukebox.samples import load_samples
 
 config.setup_logging()
 config.check_config()
@@ -38,6 +39,13 @@ LOG = logging.getLogger("jukebox.app")
 log = LOG  # Preserve legacy pipeline logging calls.
 
 LIBRARY = SongLibrary()
+
+# Register bundled sample songs from the tracked samples/ folder (matched by
+# fixed id; idempotent, so restarts never duplicate them). Missing sample
+# files are skipped with a warning by the loader.
+_SAMPLES_ADDED = load_samples(LIBRARY)
+if _SAMPLES_ADDED:
+    LOG.info("Registered %d bundled sample song(s).", _SAMPLES_ADDED)
 
 # ---------------------------------------------------------------------------
 # UI constants
@@ -191,7 +199,9 @@ def _now_status(song: Song, mode: str) -> str:
     return f"{state} {song.title} — {song.style} · {song.mood} ({kind})"
 
 
-def _spawn_prefetch(state: dict, song: Song, voice_state: dict) -> None:
+def _spawn_prefetch(state: dict, song: Song, voice_state: dict, dj_enabled: bool) -> None:
+    if not dj_enabled:
+        return
     nxt_i = state["pos"] + 1
     if nxt_i < len(state["queue"]):
         nxt = LIBRARY.get(state["queue"][nxt_i])
@@ -249,13 +259,13 @@ def _audio_value(path: Path, autoplay: bool):
     return gr.update(value=str(src), autoplay=autoplay)
 
 
-def _start_song(state: dict, idx: int, voice_state: dict) -> tuple:
+def _start_song(state: dict, idx: int, voice_state: dict, dj_enabled: bool) -> tuple:
     state["pos"], state["mode"] = idx, "song"
     song = LIBRARY.get(state["queue"][idx])
     if song is None:
         state["mode"] = "idle"
         return _queue_html(state), "That song is no longer in the library.", gr.update(), gr.update(value=None), gr.update(interactive=False), '', state
-    _spawn_prefetch(state, song, voice_state)
+    _spawn_prefetch(state, song, voice_state, dj_enabled)
     lyrics_section = _lyrics_section(song.lyrics)
     status = f'**Now playing:** {html.escape(song.title)} — {html.escape(song.style)} · {html.escape(song.mood)}{lyrics_section}'
     credit = f" · by {html.escape(song.created_by)}" if song.created_by.strip() else ""
@@ -271,10 +281,12 @@ def _start_song(state: dict, idx: int, voice_state: dict) -> tuple:
     )
 
 
-def advance(player_state: dict, voice_state: dict) -> tuple:
+def advance(player_state: dict, voice_state: dict, dj_enabled: bool) -> tuple:
     """Called by the player's `end` event and by Skip.
 
     song -> DJ clip -> next song -> ... ; state machine lives in gr.State.
+    With "DJ between songs" off, songs play back to back with no DJ
+    commentary and no DJ prefetch.
     """
     state = _player_state(player_state)
     if state["mode"] == "idle":
@@ -295,17 +307,29 @@ def advance(player_state: dict, voice_state: dict) -> tuple:
             )
         prev, nxt = LIBRARY.get(state["queue"][state["pos"]]), LIBRARY.get(state["queue"][nxt_i])
         if prev is None or nxt is None:
-            return _start_song(state, nxt_i, voice_state)
-        clip, text = service.wait_dj_clip(prev, nxt, _voice_fp(voice_state), _voice_ref(voice_state))
+            return _start_song(state, nxt_i, voice_state, dj_enabled)
+        if not dj_enabled:
+            # DJ off: songs play back to back.
+            return _start_song(state, nxt_i, voice_state, dj_enabled)
+        clip, text, reason = service.wait_dj_clip(prev, nxt, _voice_fp(voice_state), _voice_ref(voice_state))
         if clip is not None:
             state["mode"] = "dj"
+            fallback_msg = (" (commentary spoken in default voice — your custom reference was not used.)\n"
+                            if "_fallback" in service.dj_cache_entry(prev, nxt, _voice_fp(voice_state)) else "")
             return (
                 _queue_html(state),
-                f"🎙️ **DJ:** {html.escape(text or '')}",
+                f"🎙️ **DJ:** {html.escape(text or '')}{fallback_msg}",
                 gr.update(), _audio_value(clip, True), gr.update(interactive=True), '', state,
             )
-        gr.Info("DJ commentary is unavailable right now — skipping to the next song.")
-        return _start_song(state, nxt_i, voice_state)
+        # No clip ready — show specific message based on failure type
+        if reason == "voice":
+            gr.Warning(
+                "Custom voice couldn't be used for this commentary. Try a clearer 10–30 second MP3 or WAV recording of speech. "
+                "The DJ will try again with the default voice next time."
+            )
+        else:
+            gr.Info("DJ commentary is unavailable right now — skipping to the next song.")
+        return _start_song(state, nxt_i, voice_state, dj_enabled)
 
     # mode == "dj": clip finished -> next song
     nxt_i = state["pos"] + 1
@@ -318,11 +342,11 @@ def advance(player_state: dict, voice_state: dict) -> tuple:
             "🏁 Queue finished — thanks for listening!",
             gr.update(), last_audio, gr.update(interactive=False), '', state,
         )
-    return _start_song(state, nxt_i, voice_state)
+    return _start_song(state, nxt_i, voice_state, dj_enabled)
 
 
-def skip(player_state: dict, voice_state: dict) -> tuple:
-    return advance(player_state, voice_state)
+def skip(player_state: dict, voice_state: dict, dj_enabled: bool) -> tuple:
+    return advance(player_state, voice_state, dj_enabled)
 
 
 def select_for_player(song_id: str | None, player_state: dict) -> tuple:
@@ -350,7 +374,7 @@ def select_for_player(song_id: str | None, player_state: dict) -> tuple:
             gr.update(interactive=True), lyrics_section, state)
 
 
-def play(player_state: dict, voice_state: dict) -> tuple:
+def play(player_state: dict, voice_state: dict, dj_enabled: bool) -> tuple:
     state = _player_state(player_state)
     if state["mode"] != "idle":
         state["mode"], state["pos"] = "song", max(0, state["pos"])
@@ -363,10 +387,10 @@ def play(player_state: dict, voice_state: dict) -> tuple:
             "The library is empty — generate a song first.",
             gr.update(), gr.update(), gr.update(interactive=False), '', state,
         )
-    return _start_song(state, state["pos"], voice_state)
+    return _start_song(state, state["pos"], voice_state, dj_enabled)
 
 
-def play_all(player_state: dict, voice_state: dict) -> tuple:
+def play_all(player_state: dict, voice_state: dict, dj_enabled: bool) -> tuple:
     songs = [s.id for s in LIBRARY.all()]
     if not songs:
         return (
@@ -375,7 +399,7 @@ def play_all(player_state: dict, voice_state: dict) -> tuple:
             gr.update(), gr.update(), gr.update(interactive=False), '', dict(player_state),
         )
     state = {"queue": songs, "pos": 0, "mode": "idle"}
-    return play(state, voice_state)
+    return play(state, voice_state, dj_enabled)
 
 
 def add_to_queue(song_id: str, player_state: dict) -> tuple:
@@ -768,14 +792,14 @@ def build_app() -> gr.Blocks:
                     with gr.Row():
                         style = gr.Dropdown(GENRES, value="Pop", allow_custom_value=True, label="Genre")
                         mood = gr.Dropdown(MOODS, value="Happy", label="Mood")
-                    duration = gr.Slider(config.DURATION_MIN, 60, value=config.DURATION_DEFAULT, step=5, label="Duration (seconds)")
+                    duration = gr.Slider(config.DURATION_MIN, config.DURATION_MAX, value=config.DURATION_DEFAULT, step=5, label="Duration (seconds)")
                     instrumental = gr.Checkbox(False, label="Instrumental (no lyrics)")
                     theme = gr.Textbox("", label="Theme / Story", lines=3, placeholder="What is your song about?")
                     gen_btn = gr.Button("Generate Song", variant="primary")
                     gen_status = gr.HTML('', elem_id="genStatusBox")
                     gen_result = gr.Markdown('')
                 with gr.Accordion("DJ voice settings", open=False):
-                    voice_upload = gr.Audio(type="filepath", label="Custom DJ voice", sources=["upload"])
+                    voice_upload = gr.Audio(type="filepath", label="Custom DJ voice (MP3 or WAV)", sources=["upload"])
                     voice_status = gr.Markdown("Using default bundled DJ voice.")
                     remove_voice_btn = gr.Button("Remove custom voice", interactive=False, variant="secondary")
             with gr.Tab("Library", id="library"):
@@ -808,11 +832,15 @@ def build_app() -> gr.Blocks:
                             lyrics_section = gr.HTML('', elem_id="lyricsSection")
                         gr.Markdown("### Up next")
                         queue_html = gr.HTML(_queue_html(INITIAL_PLAYER), elem_id="queuePanel")
-                        # Reserved UI space only. DJ controls/parameters belong to the team integration.
-                        with gr.Group(elem_id="djOptionsPanel"):
-                            gr.Markdown("### DJ options")
-                            gr.Markdown("Coming soon.",
-                                        elem_classes=["aj-status-hint"])
+                        # DJ between songs — same structure as the "Up next"
+                        # section (plain heading + control + hint). The
+                        # custom-voice upload lives in the Create tab.
+                        gr.Markdown("### DJ options")
+                        dj_enabled = gr.Checkbox(True, label="DJ between songs")
+                        gr.Markdown(
+                            "Want the DJ to sound like you? Upload a custom voice (MP3 or WAV) in the Create tab.",
+                            elem_classes=["aj-status-hint"],
+                        )
                     with gr.Column(scale=4, min_width=0, elem_id="coverArtStudio"):
                         gr.Markdown("## Cover art studio\nGive your song a visual identity.")
                         cover_track = gr.Dropdown(choices=[(s.display_label(), s.id) for s in LIBRARY.all()],
@@ -854,10 +882,10 @@ def build_app() -> gr.Blocks:
         lib_search.change(refresh_filtered_library, inputs=[lib_search], outputs=[library_gallery, gallery_ids, selected_song])
         refresh_library_btn.click(refresh_filtered_library, inputs=[lib_search], outputs=[library_gallery, gallery_ids, selected_song])
         add_queue_btn.click(add_to_queue, inputs=[selected_song, player_state], outputs=[queue_html, lib_status, player_state])
-        play_all_btn.click(play_all, inputs=[player_state, voice_state], outputs=player_outputs)
+        play_all_btn.click(play_all, inputs=[player_state, voice_state, dj_enabled], outputs=player_outputs)
         # Play/pause, seeking, speed and volume use the single native Gradio player.
-        skip_btn.click(skip, inputs=[player_state, voice_state], outputs=player_outputs)
-        now_audio.stop(advance, inputs=[player_state, voice_state], outputs=player_outputs)
+        skip_btn.click(skip, inputs=[player_state, voice_state, dj_enabled], outputs=player_outputs)
+        now_audio.stop(advance, inputs=[player_state, voice_state, dj_enabled], outputs=player_outputs)
 
         def refresh_cover_choices():
             return gr.update(choices=[(s.display_label(), s.id) for s in LIBRARY.all()])
@@ -927,7 +955,10 @@ if __name__ == "__main__":
         # Cover art lives under data/covers; registering it here lets the
         # /gradio_api/file= URLs used by queue/gallery thumbnails always be
         # served, regardless of the working directory the app was launched from.
-        allowed_paths=[str(config.DATA_DIR), str(Path(__file__).parent / "jukebox")],
+        # samples/ is registered the same way so bundled sample covers and
+        # audio stream from their tracked location.
+        allowed_paths=[str(config.DATA_DIR), str(config.SAMPLES_DIR),
+                       str(Path(__file__).parent / "jukebox")],
         theme=gr.themes.Soft(
             primary_hue="violet",
             secondary_hue="indigo",
