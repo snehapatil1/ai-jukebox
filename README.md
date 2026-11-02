@@ -6,14 +6,6 @@ services (no paid services, no port 9000).
 
 ## Status
 
-All four features are implemented and were verified against the live class
-services: song generation, cover art (with placeholder + retry), AI DJ
-(prefetched, cached, skippable), and the queue player (auto-advancing
-song → DJ clip → song, skip, persistence across restarts). See `PROGRESS.md`
-for the full step log and test evidence.
-
-## Status
-
 Core features tested manually through the live Gradio app on macOS with a
 real browser (Chrome). Song generation, cover art, AI DJ, and fresh download
 tests each have their own result table below. The automated test suite (40 tests)
@@ -33,8 +25,7 @@ below.
 2. **Matching cover art** — Qwen writes a FLUX-safe prompt (no text, logos,
    real people, or copyrighted characters) and FLUX.2 klein 4B generates the
    cover, stored with the song in the library, queue, and now-playing view.
-   If cover generation fails, a placeholder is shown and **Retry cover**
-   regenerates only the artwork.
+   Covers can be regenerated anytime in the **Cover Art Studio**.
 3. **AI DJ** — between queued songs, Qwen writes 2–3 sentences of commentary
    that names both songs (title, style, mood, lyric theme), and Chatterbox
    speaks it. Clips are **prefetched while the current song plays** and cached
@@ -49,7 +40,7 @@ below.
 4. **Player & queue** — a single `gr.Audio` plays songs and DJ clips
    sequentially (song → DJ clip → song → …) via a state machine in `gr.State`,
    advanced on the audio component's end event. Play/pause on the player,
-   **Skip** (works during both a song and DJ speech), a visible queue with a
+   **Next track** (works during both a song and DJ speech), a visible queue with a
    now-playing indicator, "add to queue" for any library song, and **Play all**.
    The library persists across server restarts (`data/library.json`).
 
@@ -79,7 +70,7 @@ below.
 - Python **3.10 or newer** (tested on Python 3.14.6 on macOS)
   - macOS's built-in `python3` (version 3.9) is too old for this project.
     Install Python from [python.org](https://www.python.org/downloads/macos/)
-    (the macOS Installerpkg works well), then create a virtual environment:
+    (the macOS installer package works well), then create a virtual environment:
 
     ```bash
     python3 -m venv .venv
@@ -87,8 +78,9 @@ below.
     pip install -r requirements.txt
     ```
 
-- **ffmpeg** is required for audio validation and voice reference conversion
-  (Gradio also probes audio with `ffprobe`):
+On Windows, activate with `.venv\Scripts\activate`.
+
+- **ffmpeg** is required for audio validation (checking voice clip length)
   - **macOS:** `brew install ffmpeg`
   - **Windows:** Download from [ffmpeg.org](https://ffmpeg.org/download.html)
     or use `choco install ffmpeg`, then add to your PATH, or download the
@@ -156,9 +148,8 @@ the audio, and **FLUX (port 9006)** produced the cover art.
 
 ### Sample 1 — "Calloused Fingers Break The Silence" (id `b206632d8cc0`)
 
-- **Genre (custom text):** "epic hard rock, huge distorted guitar riffs,
-  thundering live drums, driving bassline, powerful raw male vocals,
-  anthemic build"
+- **Genre (dropdown):** Rock
+- The sound description (epic hard rock, huge distorted guitar riffs, thundering live drums, driving bassline, powerful raw male vocals, anthemic build) was typed into the Theme box together with the theme.
 - **Mood:** Epic — **vocal** — **duration:** 100 s
 - **Theme (as entered in the Create tab):**
 
@@ -217,6 +208,7 @@ scripts/smoke_test.py   # end-to-end sanity checks against the live services
 services (see `PROGRESS.md` for the results and for the two Gradio-6-specific
 findings: `theme`/`css` go to `launch()` not `Blocks()`, and the audio end
 event is exposed as the `stop` event).
+Last run during the initial build (see PROGRESS.md); not rerun for this version.
 
 ## Test Results (AI DJ Feature)
 
@@ -226,8 +218,6 @@ test harness; manual tests were run through the live Gradio app.
 
 | Input | Expected | Actual | Status |
 | --- | --- | --- | --- |
-| Vocal song, 10 s | Generated track with some singing | Generated, but NO audible singing — instrumental only | Observed |
-| Vocal song, 35 s | Generated track with clear singing | Singing audible, sounded right | Verified |
 | Play all with 2+ songs, default DJ voice | Song → DJ commentary → next song, automatic | Song → DJ commentary about both songs → next song, automatic; commentary text shown under player | Verified |
 | Skip during DJ speech | Jump to next song without overlap | Jumped to next song, no overlapping audio | Verified |
 | Custom voice, MP3 (user recording) | DJ uses user's voice clone | DJ sounded like the user | Verified |
@@ -236,10 +226,7 @@ test harness; manual tests were run through the live Gradio app.
 | Unsupported format (.txt) dragged onto voice box | Clear warning: only MP3 or WAV accepted | Clear warning displayed | Verified |
 | Invalid voice reference (~2 s short) | Rejected with "must be 3–60 seconds" message | Rejected, clear error shown | Script verified |
 | Invalid voice reference (~65 s long) | Rejected with "must be 3–60 seconds" message | Rejected, clear error shown | Script verified |
-| Custom voice engine failure (invalid/non-speech audio) | Fall back to default voice, show gr.Warning | Fallback triggered on any exception, gr.Warning displayed | Verified |
-| Custom voice render timeout (>4.5 min wait) | Fall back to default voice, show gr.Info | Same fallback behavior confirmed | Code reviewed |
-
-::preview{file="/Users/MaddieSavary2/Documents/MBAX 6418/Assignment #3/dj-test-table.html"}
+| Custom voice engine failure (invalid/non-speech audio) | Fall back to default voice, show gr.Warning | Fallback triggered on any exception, gr.Warning displayed | Script verified |
 
 ## Test Results (Song Generation)
 
