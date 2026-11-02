@@ -11,9 +11,6 @@ real browser (Chrome). Song generation, cover art, AI DJ, and fresh download
 tests each have their own result table below. The automated test suite (40 tests)
 also passed today. Three browser-based validation scripts are listed from PR
 #10 results; they were **not rerun** in this session.
-Two sample songs still need to be added before the final release. Known
-limitations are listed under "Unresolved issues" and "Limitations investigated"
-below.
 
 ## Features
 
@@ -170,10 +167,21 @@ the audio, and **FLUX (port 9006)** produced the cover art.
   `samples.json` (`cover_prompt`).
 - **Assets:** `samples/audio/b206632d8cc0.mp3`, `samples/covers/b206632d8cc0.png`
 
-### Samples 2 and 3 — pending
+### Sample 2 — "Wet Nose Lick The Counter Edge" (id `bb324da91efb`)
 
-Two more sample songs are planned to reach the required three; each will get
-the same block here when added.
+- **Genre (dropdown):** Folk
+- **Mood:** Calm — **vocal** — **duration:** 30 s
+- **Theme (as entered in the Create tab):** A black labrador puppy trying to steal food all the time.
+- **Cover:** generated with FLUX — **Photo** style, depicting a black Labrador puppy at a kitchen counter. The final FLUX prompt is stored in `samples.json` (`cover_prompt`).
+- **Assets:** `samples/audio/bb324da91efb.mp3`, `samples/covers/bb324da91efb.png`
+
+### Sample 3 — "Chrome Hoof Sparkle Rush" (id `ae79df356920`)
+
+- **Genre (dropdown):** Electronic / EDM
+- **Mood:** Energetic — **vocal** — **duration:** 60 s
+- **Theme (as entered in the Create tab):** Fluffy kittens chasing a unicorn through a sparkling magical theme park
+- **Cover:** generated with FLUX — **Illustration** style, featuring fluffy kittens chasing a unicorn through a pixelated landscape. The final FLUX prompt is stored in `samples.json` (`cover_prompt`).
+- **Assets:** `samples/audio/ae79df356920.mp3`, `samples/covers/ae79df356920.png`
 
 ## Class services used
 
