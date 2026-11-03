@@ -6,11 +6,10 @@ services (no paid services, no port 9000).
 
 ## Status
 
-All four features are implemented and were verified against the live class
-services: song generation, cover art (with placeholder + retry), AI DJ
-(prefetched, cached, skippable), and the queue player (auto-advancing
-song → DJ clip → song, skip, persistence across restarts). See `PROGRESS.md`
-for the full step log and test evidence.
+Song generation, cover art, and DJ speech have been exercised against the
+live class services. Automated tests cover queue transitions and persistence.
+See the verification section below for current results and limitations;
+earlier development notes are in `PROGRESS.md`.
 
 ## Features
 
@@ -147,10 +146,29 @@ the audio, and **FLUX (port 9006)** produced the cover art.
   `samples.json` (`cover_prompt`).
 - **Assets:** `samples/audio/b206632d8cc0.mp3`, `samples/covers/b206632d8cc0.png`
 
-### Samples 2 and 3 — pending
+### Sample 2 — "Steam Fogs The Glass Pane" (id `9aa2f071d359`)
 
-Two more sample songs are planned to reach the required three; each will get
-the same block here when added.
+- Lo-fi / Calm / instrumental; requested 15 seconds.
+- Theme: "Rain on a quiet cafe window".
+- Qwen generated the title and cover prompt, ACE-Step generated the audio,
+  and FLUX generated the rainy-window artwork through the app pipeline.
+- The first successful take was retained. This was generated before the
+  duration fix and is 14.088 seconds long; the manifest records actual duration.
+- Assets: `samples/audio/9aa2f071d359.mp3`, `samples/covers/9aa2f071d359.png`.
+
+### Sample 3 — "Blue Highlighters and Empty Pizza Boxes" (id `85b61f7ac792`)
+
+- Pop / Happy / vocal; requested 35 seconds.
+- Theme: "Friends celebrating finishing a difficult class project".
+- Qwen generated the title, original lyrics, and cover prompt; ACE-Step
+  generated the audio; FLUX generated the artwork of friends celebrating.
+- The first successful take was retained. This was generated before the
+  duration fix and is 32.376 seconds long; the manifest records actual duration.
+- Assets: `samples/audio/85b61f7ac792.mp3`, `samples/covers/85b61f7ac792.png`.
+
+All three sample MP3s and PNGs are included in `samples/`. User uploads and
+voice references are not part of the samples. Generation and file decoding
+were checked; a human listening review is still needed for vocal quality.
 
 ## Class services used
 
@@ -186,6 +204,31 @@ services (see `PROGRESS.md` for the results and for the two Gradio-6-specific
 findings: `theme`/`css` go to `launch()` not `Blocks()`, and the audio end
 event is exposed as the `stop` event).
 
+### Local verification of the submission fixes (November 2, 2026)
+
+- `python -m unittest discover -s tests -p 'test_*.py'`: **41 passed**.
+  The audio duration regression requires ffmpeg and is skipped if unavailable.
+- `python scripts/smoke_test.py`: **8 passed, 0 failed** against class
+  services after fixing the cover-result unpacking. One earlier attempt was
+  interrupted by a text-service disconnection; the next complete run passed.
+- New 10-second music request: **10.032 seconds** measured with ffprobe.
+  We removed automatic silence trimming to preserve the full service render.
+  This retains natural fades and avoids changing tempo or adding artificial padding.
+- All three samples have bundled audio and cover files. The two added samples
+  were generated before the duration fix; their metadata records measured length.
+- Earlier local checks verified default DJ speech, synthetic MP3/WAV reference
+  requests, song persistence across a server restart, and correct cover selection.
+  A simulated timeout re-enabled generation and showed a retry message;
+  2-second/65-second WAV files and unsupported text files were rejected.
+- **Still unverified in this review:** audible singing quality, human voice
+  likeness, and uninterrupted browser playback without overlapping sound.
+  The in-app browser's player did not advance; Chrome automation was unreliable.
+  Queue state transitions pass automated tests, but that is not a listening test.
+
+For the final listening check, open the app in a normal browser, press **Play all**,
+listen through song → DJ → next song, pause/resume mid-track, and use **Next track**
+during DJ speech. Confirm the vocal sample has singing and only one clip is audible.
+
 ## Test Results (AI DJ Feature)
 
 Tests performed on macOS with Python 3.14.6, connected to live class services
@@ -207,11 +250,14 @@ test harness; manual tests were run through the live Gradio app.
 | Custom voice engine failure (invalid/non-speech audio) | Fall back to default voice, show gr.Warning | Fallback triggered on any exception, gr.Warning displayed | Verified |
 | Custom voice render timeout (>4.5 min wait) | Fall back to default voice, show gr.Info | Same fallback behavior confirmed | Code reviewed |
 
-::preview{file="/Users/MaddieSavary2/Documents/MBAX 6418/Assignment #3/dj-test-table.html"}
-
 ![DJ commentary](screenshots/dj-commentary.png)
 
 ## Limitations
+
+- Music is now saved exactly as returned by ACE-Step, including quiet endings.
+  The former silence trimming shortened requested durations; preserving the
+  render avoids that change without speeding up or padding the music. Service
+  timing and MP3 framing may still introduce small differences.
 
 - **Short vocal songs are not fully sung.** The music engine can only sing
   what fits the requested duration: a 10-second vocal track gets roughly a

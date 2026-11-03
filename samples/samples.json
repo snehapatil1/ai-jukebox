@@ -12,5 +12,33 @@
     "cover_prompt": "Create square abstract album artwork depicting the feeling of loss and confusion as an unsettled, defiant force. Use expressive shapes, color fields, and rhythmic forms to visualize raw human passion without literal instruments or figures. The composition features a strong silhouette of chaotic, jagged forms clashing against smoother, sweeping curves, creating clear contrast and an uncluttered focal point recognizable at thumbnail size. Lighting is dramatic and moody, emphasizing depth through shadow and highlight. The coordinated palette contrasts deep, dark blues with vibrant orangey reds, symbolizing the tension between doubt and epic defiance. This nonliteral visual metaphor captures the essence of keeping music human through energetic, painterly abstraction rather than a representational scene. Artistic style: Abstract. Nonliteral visual metaphor made of expressive shapes, color fields and rhythmic forms rather than a representational scene. Color palette: contrast between dark blues and orangey reds. Square album artwork, one clear focal point recognizable at thumbnail size. No lettering, logos, signatures, or watermarks. The title is displayed separately in the app.",
     "audio": "b206632d8cc0.mp3",
     "cover": "b206632d8cc0.png"
+  },
+  {
+    "id": "9aa2f071d359",
+    "title": "Steam Fogs The Glass Pane",
+    "style": "Lo-fi",
+    "mood": "Calm",
+    "duration_sec": 14.088,
+    "instrumental": true,
+    "theme": "Rain on a quiet cafe window",
+    "lyrics": "",
+    "created_by": "Local test",
+    "cover_prompt": "Create square album artwork featuring a rain-streaked cafe window as the central visual metaphor, evoking the calm lo-fi mood. The setting is a dimly lit interior with blurred outlines of empty chairs and warm wooden tables outside the glass. Composition centers on the wet pane, where droplets distort the view of a quiet street, creating a soft, dreamlike focal point. Lighting is gentle and diffused, emphasizing the cool blues and greys of the rain against the muted amber tones of the indoor warmth. Use an illustrative style with expressive brushstrokes and designed shapes to capture the texture of water and glass. Avoid photographic realism, instruments, or text, ensuring a clean, uncluttered silhouette suitable for thumbnail recognition while maintaining a cozy, melancholic atmosphere. Artistic style: Illustration. Drawn or painted artwork with expressive illustrative marks and designed shapes; not a photographic image. Square album artwork, one clear focal point recognizable at thumbnail size. No lettering, logos, signatures, or watermarks. The title is displayed separately in the app.",
+    "audio": "9aa2f071d359.mp3",
+    "cover": "9aa2f071d359.png"
+  },
+  {
+    "id": "85b61f7ac792",
+    "title": "Blue Highlighters and Empty Pizza Boxes",
+    "style": "Pop",
+    "mood": "Happy",
+    "duration_sec": 32.376,
+    "instrumental": false,
+    "theme": "Friends celebrating finishing a difficult class project",
+    "lyrics": "[Verse 1]\nSubmit the file, the screen goes green\nThe hardest part of all is done\nWe breathe it out, the work is through\nNo more edits, just for fun\n\n[Chorus]\nHigh five across the desk so wide\nWe made it through with pride\nLaughter rings in empty halls\nFriends who caught our falling balls\nHigh five across the desk so wide\nWe made it through with pride\nLaughter rings in empty halls\nFriends who caught our falling balls",
+    "created_by": "Local test",
+    "cover_prompt": "Create square album artwork featuring four diverse friends in a vibrant, sun-drenched library, celebrating the completion of their collaborative project. The composition centers on a group huddle with raised arms and beaming smiles, establishing a clear focal point that radiates joy and relief. Use an illustrative style with expressive painted marks and designed shapes to convey energy without photographic realism. A coordinated palette of sunny yellows, soft blues, and fresh greens evokes a happy mood, contrasting with the muted browns of the surrounding bookshelves. Lighting is bright and warm, highlighting their faces and the green checkmark on a laptop screen nearby. Ensure strong silhouettes and generous negative space for thumbnail clarity, excluding any text or musical instruments to maintain an uncluttered, celebratory visual metaphor. Artistic style: Illustration. Drawn or painted artwork with expressive illustrative marks and designed shapes; not a photographic image. Square album artwork, one clear focal point recognizable at thumbnail size. No lettering, logos, signatures, or watermarks. The title is displayed separately in the app.",
+    "audio": "85b61f7ac792.mp3",
+    "cover": "85b61f7ac792.png"
   }
 ]

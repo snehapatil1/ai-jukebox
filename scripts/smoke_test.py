@@ -1,8 +1,8 @@
 """Smoke test: exercises each class service through the real app pipeline.
 
 Run with the project venv:  .venv/bin/python scripts/smoke_test.py
-Every assertion below was verified against live service responses during
-development; this script re-checks them end to end.
+Checks service responses and saved files. Audible quality and browser playback
+still require a separate listening check.
 """
 from __future__ import annotations
 
@@ -48,7 +48,7 @@ song = __import__("jukebox.library", fromlist=["Song"]).Song(
     id="smoke", title=draft["title"], style="Jazz", mood="Calm",
     duration_sec=10, instrumental=False, theme="rainy cafe", lyrics=draft["lyrics"])
 t0 = time.monotonic()
-cover = service.generate_cover(song)
+cover, cover_prompt = service.generate_cover(song)
 print(f"  ({time.monotonic()-t0:.1f}s) {cover.name} {cover.stat().st_size} bytes")
 check("cover PNG saved", cover.stat().st_size > 10_000 and cover.name.endswith(".png"))
 
