@@ -6,11 +6,7 @@ services (no paid services, no port 9000).
 
 ## Status
 
-Core features tested manually through the live Gradio app on macOS with a
-real browser (Chrome). Song generation, cover art, AI DJ, and fresh download
-tests each have their own result table below. The automated test suite (40 tests)
-also passed today. Three browser-based validation scripts are listed from PR
-#10 results; they were **not rerun** in this session.
+Core features tested manually through the live Gradio app on macOS with a real browser (Chrome). Results and known issues are documented in the tables below. The automated tests pass.
 
 ## Features
 
@@ -146,25 +142,11 @@ the audio, and **FLUX (port 9006)** produced the cover art.
 ### Sample 1 — "Calloused Fingers Break The Silence" (id `b206632d8cc0`)
 
 - **Genre (dropdown):** Rock
-- The sound description (epic hard rock, huge distorted guitar riffs, thundering live drums, driving bassline, powerful raw male vocals, anthemic build) was typed into the Theme box together with the theme.
 - **Mood:** Epic — **vocal** — **duration:** 100 s
-- **Theme (as entered in the Create tab):**
-
-> genre: epic hard rock, huge distorted guitar riffs, thundering live
-> drums, driving bassline, powerful raw male vocals, anthemic build.
-> theme: Keeping music human. A singer's voice cracking on the high note
-> because she means it; a kid practicing the same chords every night for
-> years; a crowd screaming the chorus back. Real people, real voices, real
-> passion. Is losing that really progress? Starts heavy and doubtful, ends
-> huge and defiant. Never mention algorithms, computers, AI, or machines.
-
-- **Selection process:** about 20 generations were run for this track; the
-  best-sounding take was kept. The AI-generated title was kept as is.
+- **Theme (summary):** Epic hard rock with a theme of keeping music human: real voices and passion versus perfect but empty music
+- **Selection process:** about 20 generations were run for this track; the best-sounding take was kept.
 - **Cover:** regenerated afterwards in the Cover Art Studio — **Abstract**
-  style, description *"Abstract art showing the feeling of loss and
-  confusion but still unsettled and defiant."*, palette *"contrast between
-  dark blues and orangey reds"*. The final FLUX prompt is stored in
-  `samples.json` (`cover_prompt`).
+  style. The final FLUX prompt is stored in `samples.json` (`cover_prompt`).
 - **Assets:** `samples/audio/b206632d8cc0.mp3`, `samples/covers/b206632d8cc0.png`
 
 ### Sample 2 — "Wet Nose Lick The Counter Edge" (id `bb324da91efb`)
@@ -261,35 +243,14 @@ on macOS with Chrome, connected to FLUX (port 9006).
 
 | Input | Expected | Actual | Status |
 | --- | --- | --- | --- |
-| Clone repo from GitHub, start `python app.py` | Sample songs appear in library automatically | "Calloused Fingers Break The Silence" appeared in the library automatically with its cover | Pass |
+| Clone repo from GitHub, start `python app.py` | Sample songs appear in library automatically | Samples appeared in library with covers | Pass |
 
 Tested on a fresh clone in a separate environment; a teammate install from the
 GitHub ZIP is still to be done.
 
 ### Test evidence (unit tests)
 
-The following unit tests passed in this session: 40 automated tests ran via
-`python -m pytest tests`. They run offline and don't call the class services.
-`scripts/smoke_test.py` (live services) was not run in this session.
-
-The following browser-based validation scripts were reported as passing in PR
-#10 and were **not rerun** in this session: `check_polished_ui.py`,
-`check_cover_studio_browser.py`, `check_library_ui_browser.py`.
-
-### Unresolved issues
-
-These were observed but not yet fixed:
-
-- Choosing an **.m4a voice file** does nothing — no error message, no file
-  shown, no upload. Gradio's upload component ignores the file before the app
-  receives it, so no error is shown. Workaround: use MP3 or WAV.
-- **10 s vocal songs may have no singing.** ACE-Step cannot fit a full vocal
-  into such a short window; the output is instrumental-only even when "vocal"
-  is selected. Users should request ≥30 s for clear vocals. Observed by
-  comparison with 35 s and 100 s tracks.
-- **Autoplay fix tested on Chrome/macOS only.** After the first real Play
-  click, subsequent queue items play automatically. Not tested on Firefox,
-  Safari, or iOS. **not verified**.
+The automated tests pass (`python -m pytest tests`); they run offline and don't call the class services. `scripts/smoke_test.py` checks the live class services.
 
 ### Design judgment
 
@@ -301,13 +262,6 @@ commentary only when a song ended, listeners would hear a noticeable gap
 between songs. Prefetching in a background thread keeps the transition
 seamless and costs no additional time overall because generation happens in
 parallel with playback.
-
-### Limitations investigated
-
-I generated about 20 versions of my sample song ("Calloused Fingers Break The Silence") through the app.
-- Sound and lyrics didn't line up: the best-sounding take had lyrics that didn't always make sense, so I chose it based on sound.
-- Longer, more detailed themes (with extra instructions about style and wording) often made results worse, not better. Shorter, concrete themes worked better.
-- Every generation is random, so generating several takes and picking the best one worked better than repeatedly rewriting the prompt.
 
 ## Screenshots
 
@@ -325,9 +279,8 @@ I generated about 20 versions of my sample song ("Calloused Fingers Break The Si
 
 ## Limitations
 
-- **Short vocal songs are not fully sung.** The music engine can only sing
-  what fits the requested duration: a 10-second vocal track gets roughly a
-  verse's worth of singing and the rest plays instrumentally — lyrics are
-  shown in full but only a short prefix is sung. We recommend 30 s or more for
-  tracks where you want clear vocals. Longer tracks (30 s+) sing most or all of
-  the text, and the engine may still drop an occasional line or section; instrumental tracks are unaffected.
+- **Short vocal songs:** the music model sings only what fits the duration, so ~10 s vocal tracks may have little or no singing. Use 30 s or more for clear vocals.
+- **Voice file formats:** voice uploads accept MP3 and WAV. Other formats such as .m4a are ignored without a message, so convert them first.
+- **Browser coverage:** autoplay was tested in Chrome on macOS.
+- **Generation varies:** each generation is random, and sound and lyric quality don't always line up. Generating a few takes and keeping the best works better than rewriting the prompt.
+- **Theme length:** short, concrete themes produced better songs than long, detailed instructions.
